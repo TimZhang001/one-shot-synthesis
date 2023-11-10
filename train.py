@@ -12,7 +12,7 @@ dataloader, model_config = dataloading.prepare_dataloading(opt)
 
 # --- create models, losses, and optimizers ---#
 netG, netD, netEMA = models.create_models(opt, model_config)
-losses_computer = losses.losses_computer(opt, netD.num_blocks)
+losses_computer    = losses.losses_computer(opt, netD.num_blocks)
 optimizerG, optimizerD = models.create_optimizers(netG, netD, opt)
 
 # --- create utils --- #

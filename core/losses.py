@@ -23,7 +23,7 @@ class losses_computer():
         elif loss_mode == "bce":
             return bce_loss
         else:
-            raise ValueError('Unexpected loss_mode {}'.format(mode))
+            raise ValueError('Unexpected loss_mode {}'.format(loss_mode))
 
     def content_segm_loss(self, out_d, data, real, forD):
         """

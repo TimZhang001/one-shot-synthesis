@@ -2,3 +2,9 @@ checkpoints/
 **__pycache__/
 __pycache__/
 .idea/
+datasets/mvtec/image/*
+datasets/mvtec/mask/*
+datasets/mvtec_all
+datasets/mvtec/005_back.png
+datasets/mvtec/005.json
+image_tools.py
