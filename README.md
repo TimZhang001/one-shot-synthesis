@@ -25,7 +25,7 @@ conda activate osmis
 
 ## Preparing the data
 
-Just create a name for your input image-mask pair and copy the training data under  ```datasets/$name/```. If you don't have a segmentation mask, or you simply want to run the code without it, you can also have a single image or video without masks. In this case, or in case you activate the ```--no_masks``` option, the code will automatically launch SIV-GAN training only on images. Examples of dataset structures can be found in [./datasets](datasets).
+Just create a name for your input image-mask pair and copy the training data under  ```datasets/$name/```. If you don't have a segmentation mask, or you simply want to run the code without it, you can also have a single image or video without masks. In this case, or in case you activate the ```--use_masks``` option, the code will automatically launch SIV-GAN training only on images. Examples of dataset structures can be found in [./datasets](datasets).
 
 
 ## Training the model

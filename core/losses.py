@@ -8,8 +8,8 @@ class losses_computer():
         The class implementing the loss computations
         """
         self.loss_function = self.get_loss_function(opt.loss_mode)
-        self.no_masks = opt.no_masks
-        self.no_DR = opt.no_DR
+        self.use_masks     = opt.use_masks
+        self.use_DR        = opt.use_DR
         self.lambdas = {"content": 0.5 / num_blocks,
                         "layout": 0.5 / num_blocks,
                         "low-level": 1.0 / num_blocks,
@@ -68,13 +68,13 @@ class losses_computer():
         # --- adversarial loss ---#
         for item in out_d:
             for i in range(len(out_d[item])):
-                if item == "content" and not self.no_masks:
+                if item == "content" and self.use_masks:
                     losses[item] = losses.get(item, 0) + self.content_segm_loss(out_d[item][i], data, real, forD)
                 else:
                     losses[item] = losses.get(item, 0) + self.loss_function(out_d[item][i], real, forD)
 
         # --- diversity regularization ---#
-        if not forD and not self.no_DR:
+        if not forD and self.use_DR:
             losses["DR"] = self.diversity_regularization(data["features"])
         losses = self.balance_losses(losses)
         return losses
@@ -109,7 +109,8 @@ def hinge_loss(output, real, forD):
 
 def bce_loss(output, real, forD, no_aggr=False):
     target_tensor = get_target_tensor(output, real).to(output.device)
-    ans = F.binary_cross_entropy_with_logits(output, target_tensor, reduction=("mean" if not no_aggr else "none"))
+    ans           = F.binary_cross_entropy_with_logits(output, target_tensor, 
+                                                       reduction=("mean" if not no_aggr else "none"))
     return ans
 
 

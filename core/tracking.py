@@ -18,9 +18,9 @@ class visualizer():
             folder_images = os.path.join(opt.checkpoints_dir, opt.exp_name, "images")
         else:
             folder_images = os.path.join(opt.checkpoints_dir, opt.exp_name, "evaluation")
-        self.losses_saver = losses_saver(folder_losses, opt.continue_epoch)
-        self.image_saver = image_saver(folder_images, opt.no_masks, opt.phase, opt.continue_epoch)
-        self.network_saver = network_saver(folder_networks, opt.no_EMA)
+        self.losses_saver  = losses_saver(folder_losses, opt.continue_epoch)
+        self.image_saver   = image_saver(folder_images, opt.use_masks, opt.phase, opt.continue_epoch)
+        self.network_saver = network_saver(folder_networks, opt.use_EMA)
 
     def track_losses_logits(self, logits, losses):
         self.losses_saver.track(logits, losses)
@@ -102,22 +102,23 @@ class losses_saver():
 
 
 class image_saver():
-    def __init__(self, folder_images, no_masks, phase, continue_epoch):
+    def __init__(self, folder_images, use_masks, phase, continue_epoch):
         self.folder_images = folder_images
-        self.no_masks = no_masks
+        self.use_masks = use_masks
         self.phase = phase
         self.ext = ".png" if self.phase == "test" else ".jpg"
         if phase == "test":
-            os.makedirs(os.path.join(folder_images, str(continue_epoch)), exist_ok=True)
+            os.makedirs(os.path.join(folder_images, str(continue_epoch).zfill(8)), exist_ok=True)
         else:
             os.makedirs(folder_images, exist_ok=True)
 
     def save(self, fake, epoch, i=None):
-        epoch = str(epoch) + "/" + str(i) if i is not None else str(epoch)
+        # epoch 转化为str 保存为6位数，不足的前面补0        
+        epoch = str(epoch).zfill(8) + "/" + str(i) if i is not None else str(epoch).zfill(8)
 
         images = (fake["images"][-1] + 1) / 2
         torchvision.utils.save_image(images, os.path.join(self.folder_images, epoch+self.ext))
-        if not self.no_masks:
+        if self.use_masks:
             painted_masks = self.paint_mask(fake["masks"])
             torchvision.utils.save_image(painted_masks, os.path.join(self.folder_images, epoch+"_mask"+self.ext))
 
@@ -133,18 +134,18 @@ class image_saver():
 
 
 class network_saver():
-    def __init__(self, folder_networks, no_EMA):
+    def __init__(self, folder_networks, use_EMA):
         self.folder_networks = folder_networks
-        self.no_EMA = no_EMA
+        self.use_EMA = use_EMA
         os.makedirs(folder_networks, exist_ok=True)
 
     def save(self, netG, netD, netEMA, epoch):
-        torch.save(netG.state_dict(), os.path.join(self.folder_networks, str(epoch)+"_G.pth"))
-        torch.save(netD.state_dict(), os.path.join(self.folder_networks, str(epoch)+"_D.pth"))
-        if not self.no_EMA:
-            torch.save(netEMA.state_dict(), os.path.join(self.folder_networks, str(epoch)+"_G_EMA.pth"))
+        torch.save(netG.state_dict(), os.path.join(self.folder_networks, str(epoch).zfill(8)+"_G.pth"))
+        torch.save(netD.state_dict(), os.path.join(self.folder_networks, str(epoch).zfill(8)+"_D.pth"))
+        if self.use_EMA:
+            torch.save(netEMA.state_dict(), os.path.join(self.folder_networks, str(epoch).zfill(8)+"_G_EMA.pth"))
         with open(os.path.join(self.folder_networks, "latest_epoch.txt"), "w") as f:
-            f.write(str(epoch))
+            f.write(str(epoch).zfill(8))
 
 
 # --- palette to colorize the mask visualizations --- #

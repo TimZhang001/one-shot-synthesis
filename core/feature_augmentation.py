@@ -4,12 +4,12 @@ import random
 
 
 class Content_FA(nn.Module):
-    def __init__(self, no_mask, prob_FA_con, num_mask_channels=None):
+    def __init__(self, use_masks, prob_FA_con, num_mask_channels=None):
         super(Content_FA, self).__init__()
         self.prob = prob_FA_con
         self.ranges = (0.10, 0.30)
-        self.no_mask = no_mask
-        if not self.no_mask:
+        self.use_masks = use_masks
+        if self.use_masks:
             self.num_mask_channels = num_mask_channels
 
     def mix(self, y):
@@ -45,11 +45,11 @@ class Content_FA(nn.Module):
 
     def forward(self, y):
         ans = y
-        if not self.no_mask: # --- Apply only on background if masks are given --- #
+        if self.use_masks: # --- Apply only on background if masks are given --- #
             y = ans[:ans.shape[0]//self.num_mask_channels]
         y = self.mix(y)
         y = self.drop(y)
-        if not self.no_mask:
+        if self.use_masks:
             ans[:ans.shape[0]//self.num_mask_channels] = y
         else:
             ans = y
@@ -57,14 +57,14 @@ class Content_FA(nn.Module):
 
 
 class Layout_FA(nn.Module):
-    def __init__(self, no_mask, prob):
+    def __init__(self, use_masks, prob):
         super(Layout_FA, self).__init__()
-        self.no_mask = no_mask
-        self.prob = prob
-        self.ranges = (0.10, 0.30)
+        self.use_masks = use_masks
+        self.prob      = prob
+        self.ranges    = (0.10, 0.30)
 
     def forward(self, y, masks):
-        if not self.no_mask:
+        if self.use_masks:
             mask_for_FA = torch.nn.functional.interpolate(masks, size=(y.shape[2], y.shape[3]), mode="nearest")
             ans = self.func_with_mask(y, mask_for_FA)
         else:

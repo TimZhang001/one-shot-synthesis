@@ -14,12 +14,12 @@ def prepare_dataloading(opt):
                           "num_blocks_g":  dataset.recommended_config[1],
                           "num_blocks_d":  dataset.recommended_config[2],
                           "num_blocks_d0": dataset.recommended_config[3],
-                          "no_masks": dataset.no_masks,
+                          "use_masks": dataset.use_masks,
                           "num_mask_channels": dataset.num_mask_channels}
-    if not recommended_config["no_masks"] and not opt.no_masks:
+    if recommended_config["use_masks"] and opt.use_masks:
         print("Using the training regime *with* segmentation masks")
     else:
-        opt.no_masks = True
+        opt.use_masks = False
         print("Using the training regime *without* segmentation masks")
     dataloader = torch.utils.data.DataLoader(dataset, batch_size = opt.batch_size, shuffle = True, num_workers=8)
     return dataloader, recommended_config
@@ -39,7 +39,7 @@ class Dataset(torch.utils.data.Dataset):
         self.image_resolution, self.recommended_config = get_recommended_config(self.get_im_resolution(opt.max_size))
 
         # --- masks --- #
-        if os.path.isdir(self.root_masks) and not opt.no_masks:
+        if os.path.isdir(self.root_masks) and opt.use_masks:
             self.list_masks = self.get_frames_list(self.root_masks)
             assert len(self.list_imgs) == len(self.list_masks), \
                 "Different number of images and masks %d vs %d" % (len(self.list_imgs), len(self.list_masks))
@@ -47,9 +47,9 @@ class Dataset(torch.utils.data.Dataset):
                 assert os.path.splitext(self.list_imgs[i])[0] == os.path.splitext(self.list_masks[i])[0], \
                 "Image and its mask must have same names %s - %s" % (self.list_imgs[i], self.list_masks[i])
             self.num_mask_channels = self.get_num_mask_channels()
-            self.no_masks = False
+            self.use_masks = True
         else:
-            self.no_masks = True
+            self.use_masks = False
             self.num_mask_channels = None
 
         print("Created a dataset of size =", len(self.list_imgs), "with image resolution", self.image_resolution)
@@ -131,7 +131,7 @@ class Dataset(torch.utils.data.Dataset):
         output["images"] = img
 
         # --- mask ---#
-        if not self.no_masks:
+        if self.use_masks:
             mask_pil = Image.open(os.path.join(self.root_masks, self.list_imgs[idx][:-4] + ".png"))
             mask = F.to_tensor(F.resize(mask_pil, size=target_size, interpolation=Image.NEAREST))
             mask = self.create_mask_channels(mask)  # mask should be N+1 channels

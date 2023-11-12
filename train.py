@@ -28,8 +28,8 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
 
     # --- generator update --- #
     netG.zero_grad()
-    z = utils.sample_noise(opt.noise_dim, opt.batch_size).to(opt.device)
-    out_G = netG.generate(z, get_feat=not opt.no_DR)
+    z     = utils.sample_noise(opt.noise_dim, opt.batch_size).to(opt.device)
+    out_G = netG.generate(z, get_feat=opt.use_DR)
     out_G = diff_augment(out_G)
     logits["G"] = netD.discriminate(out_G, for_real=False, epoch=epoch)
     losses["G"] = losses_computer(logits["G"], out_G, real=True, forD=False)
@@ -57,14 +57,14 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
 
     # --- stats tracking --- #
     visualizer.track_losses_logits(logits, losses)
-    if not opt.no_EMA:
+    if opt.use_EMA:
         netEMA = utils.update_EMA(netEMA, netG, opt.EMA_decay)
     if epoch % opt.freq_save_ckpt == 0 or epoch == opt.num_epochs:
         visualizer.save_networks(netG, netD, netEMA, epoch)
     if epoch % opt.freq_print == 0 or epoch == opt.num_epochs:
         timer(epoch)
         z = utils.sample_noise(opt.noise_dim, 8).to(opt.device)
-        fake = netEMA.generate(z) if not opt.no_EMA else netG.generate(z)
+        fake = netEMA.generate(z) if opt.use_EMA else netG.generate(z)
         visualizer.save_batch(fake, epoch)
     if (epoch % opt.freq_save_loss == 0 or epoch == opt.num_epochs) and epoch > 0 :
         visualizer.save_losses_logits(epoch)

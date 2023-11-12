@@ -41,21 +41,21 @@ if not os.path.isdir(exp_folder):
 
 # --- Read options file from checkpoint --- #
 file_name = os.path.join(args.checkpoints_dir, args.exp_name, "opt.pkl")
-new_opt = pickle.load(open(file_name, 'rb'))
-no_masks = getattr(new_opt, "no_masks")
-dataroot = getattr(new_opt, "dataroot")
+new_opt   = pickle.load(open(file_name, 'rb'))
+use_masks = getattr(new_opt, "use_masks")
+dataroot  = getattr(new_opt, "dataroot")
 dataset_name = getattr(new_opt, "dataset_name")
 path_real_images = os.path.join(dataroot, dataset_name, "image")
-if not no_masks:
+if use_masks:
     path_real_masks = os.path.join(dataroot, dataset_name, "mask")
 
 # --- Prepare files and images to compute metrics --- #
 names_real_image = sorted(os.listdir(path_real_images))
-if not no_masks:
+if use_masks:
     names_real_masks = sorted(os.listdir(path_real_masks))
 names_fake = sorted(os.listdir(os.path.join(exp_folder)))
 names_fake_image = [item for item in names_fake if "mask" not in item]
-if not no_masks:
+if use_masks:
     names_fake_masks = [item[:-4]+"_mask"+item[-4:] for item in names_fake_image]
 list_real_image, list_fake_image = list(), list()
 for i in range(len(names_fake_image)):
@@ -71,7 +71,7 @@ with torch.no_grad():
     sifid1, sifid2, sifid3, sifid4 = SIFID(list_real_image, list_fake_image, args.sifid_all_layers)
     lpips = LPIPS(list_fake_image)
     dist_to_tr, dist_to_tr_byimage = LPIPS_to_train(list_real_image, list_fake_image, names_fake_image)
-if not no_masks:
+if use_masks:
     miou_tensor, miou_byimage, acc_byimage = mIoU(path_real_images, names_real_image, path_real_masks, names_real_masks,
          exp_folder, names_fake_image, names_fake_masks, im_res)
 
@@ -93,7 +93,7 @@ if sifid4 is not None:
 np.save(os.path.join(save_fld, str(args.epoch))+"lpips", lpips.cpu())
 np.save(os.path.join(save_fld, str(args.epoch))+"dist_to_tr", dist_to_tr.cpu())
 np.save(os.path.join(save_fld, str(args.epoch))+"dist_to_tr_byimage", dist_to_tr_byimage)
-if not no_masks:
+if use_masks:
     # format for segm_miou_accuracy is 1) Accuracy (val->tr) 2) mIoU (val->tr) 4) Accuracy (tr->val) 5) mIoU (tr->val)
     np.save(os.path.join(save_fld, str(args.epoch))+"segm_miou_accuracy", miou_tensor)
     np.save(os.path.join(save_fld, str(args.epoch))+"segm_accuracy_byimage", acc_byimage)

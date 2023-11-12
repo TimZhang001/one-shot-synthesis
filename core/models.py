@@ -18,7 +18,7 @@ def create_models(opt, recommended_config):
     # --- generator and EMA --- #
     netG = Generator(config_G).to(opt.device)
     netG.apply(weights_init)
-    netEMA = copy.deepcopy(netG) if not opt.no_EMA else None
+    netEMA = copy.deepcopy(netG) if opt.use_EMA else None
 
     # --- discriminator --- #
     if opt.phase == "train":
@@ -30,13 +30,13 @@ def create_models(opt, recommended_config):
     # --- load previous ckpt  --- #
     path = os.path.join(opt.checkpoints_dir, opt.exp_name, "models")
     if opt.continue_train or opt.phase == "test":
-        netG.load_state_dict(torch.load(os.path.join(path, str(opt.continue_epoch)+"_G.pth")))
+        netG.load_state_dict(torch.load(os.path.join(path, str(opt.continue_epoch).zfill(8)+"_G.pth")))
         print("Loaded Generator checkpoint")
-        if not opt.no_EMA:
-            netEMA.load_state_dict(torch.load(os.path.join(path, str(opt.continue_epoch)+"_G_EMA.pth")))
+        if opt.use_EMA:
+            netEMA.load_state_dict(torch.load(os.path.join(path, str(opt.continue_epoch).zfill(8)+"_G_EMA.pth")))
             print("Loaded Generator_EMA checkpoint")
     if opt.continue_train and opt.phase == "train":
-        netD.load_state_dict(torch.load(os.path.join(path, str(opt.continue_epoch)+"_D.pth")))
+        netD.load_state_dict(torch.load(os.path.join(path, str(opt.continue_epoch).zfill(8)+"_D.pth")))
         print("Loaded Discriminator checkpoint")
     return netG, netD, netEMA
 
@@ -52,8 +52,8 @@ def prepare_config(opt, recommended_config):
     Create model configuration dicts based on recommended settings and input parameters.
     Recommended num_blocks_d and num_blocks_d0 can be overridden by user inputs
     """
-    G_keys_recommended = ['noise_shape', 'num_blocks_g', "no_masks", "num_mask_channels"]
-    D_keys_recommended = ['num_blocks_d', 'num_blocks_d0', "no_masks", "num_mask_channels"]
+    G_keys_recommended = ['noise_shape', 'num_blocks_g', "use_masks", "num_mask_channels"]
+    D_keys_recommended = ['num_blocks_d', 'num_blocks_d0', "use_masks", "num_mask_channels"]
     G_keys_user = ["ch_G", "norm_G", "noise_dim"]
     D_keys_user = ["ch_D", "norm_D", "prob_FA_con", "prob_FA_lay", "bernoulli_warmup"]
 
@@ -97,7 +97,7 @@ class Generator(nn.Module):
         self.noise_shape = config_G["noise_shape"]
         self.noise_init_dim = config_G["noise_dim"]
         self.norm_name = config_G["norm_G"]
-        self.no_masks = config_G["no_masks"]
+        self.use_masks = config_G["use_masks"]
         self.num_mask_channels = config_G["num_mask_channels"]
         num_of_channels = get_channels("Generator", config_G["ch_G"])[-self.num_blocks-1:]
 
@@ -108,7 +108,7 @@ class Generator(nn.Module):
             cur_rgb   = to_rgb(num_of_channels[i+1])
             self.body.append(cur_block)
             self.rgb_converters.append(cur_rgb)
-        if not self.no_masks:
+        if self.use_masks:
             self.mask_converter = nn.Conv2d(num_of_channels[i+1], self.num_mask_channels, 3, padding=1, bias=True)
         print("Created Generator with %d parameters" % (sum(p.numel() for p in self.parameters())))
 
@@ -126,7 +126,7 @@ class Generator(nn.Module):
 
         if get_feat:
              output["features"] = ans_feat
-        if not self.no_masks:
+        if self.use_masks:
             mask = self.mask_converter(x)
             mask = F.softmax(mask, dim=1)
             output["masks"] = mask
@@ -166,11 +166,11 @@ class Discriminator(nn.Module):
         self.num_blocks_ll = config_D["num_blocks_d0"]
         self.norm_name = config_D["norm_D"]
         self.prob_FA = {"content": config_D["prob_FA_con"], "layout": config_D["prob_FA_lay"]}
-        self.no_masks = config_D["no_masks"]
+        self.use_masks = config_D["use_masks"]
         self.num_mask_channels = config_D["num_mask_channels"]
         self.bernoulli_warmup = config_D["bernoulli_warmup"]
         num_of_channels = get_channels("Discriminator", config_D["ch_D"])[:self.num_blocks + 1]
-        if not self.no_masks:
+        if self.use_masks:
             for i in range(self.num_blocks_ll+1, self.num_blocks):
                 num_of_channels[i] = int(num_of_channels[i] * 2)
         self.feature_prev_ratio = 8  # for msg concatenation
@@ -189,16 +189,16 @@ class Discriminator(nn.Module):
             self.final_ll.append(to_decision(num_of_channels[i+1], 1))
 
         # --- D content --- #
-        self.content_FA = Content_FA(self.no_masks, self.prob_FA["content"], self.num_mask_channels)
+        self.content_FA = Content_FA(self.use_masks, self.prob_FA["content"], self.num_mask_channels)
         for i in range(self.num_blocks_ll, self.num_blocks):
             k = i - self.num_blocks_ll
             cur_block_content = D_block(num_of_channels[i], num_of_channels[i + 1], self.norm_name, only_content=True)
             self.body_content.append(cur_block_content)
-            out_channels = 1 if self.no_masks else self.num_mask_channels + 1
+            out_channels = 1 if not self.use_masks else self.num_mask_channels + 1
             self.final_content.append(to_decision(num_of_channels[i + 1], out_channels))
 
         # --- D layout --- #
-        self.layout_FA = Layout_FA(self.no_masks, self.prob_FA["layout"])
+        self.layout_FA = Layout_FA(self.use_masks, self.prob_FA["layout"])
         for i in range(self.num_blocks_ll, self.num_blocks):
             k = i - self.num_blocks_ll
             in_channels = 1 if k > 0 else num_of_channels[i]
@@ -224,7 +224,7 @@ class Discriminator(nn.Module):
 
     def discriminate(self, inputs, for_real, epoch):
         images = inputs["images"]
-        masks = inputs["masks"] if not self.no_masks else None
+        masks  = inputs["masks"] if self.use_masks else None
         output_ll, output_content, output_layout = list(), list(), list(),
 
         # --- D low-level --- #
@@ -237,7 +237,7 @@ class Discriminator(nn.Module):
 
         # --- D content --- #
         y_con = y
-        if not self.no_masks:
+        if self.use_masks:
             y_con = self.content_masked_attention(y, masks, for_real, epoch)
         y_con = torch.mean(y_con, dim=(2, 3), keepdim=True)
         if for_real:
