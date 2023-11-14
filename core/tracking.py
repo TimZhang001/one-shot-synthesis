@@ -28,8 +28,8 @@ class visualizer():
     def save_losses_logits(self, epoch):
         self.losses_saver.save(epoch)
 
-    def save_batch(self, fake, epoch, i=None):
-        self.image_saver.save(fake, epoch, i)
+    def save_batch(self, fake, batch, epoch, i=None):
+        self.image_saver.save(fake, batch, epoch, i)
 
     def save_networks(self, netG, netD, netEMA ,epoch):
         self.network_saver.save(netG, netD, netEMA, epoch)
@@ -112,7 +112,7 @@ class image_saver():
         else:
             os.makedirs(folder_images, exist_ok=True)
 
-    def save(self, fake, epoch, i=None):
+    def save(self, fake, batch, epoch, i=None):
         # epoch 转化为str 保存为6位数，不足的前面补0        
         epoch = str(epoch).zfill(8) + "/" + str(i) if i is not None else str(epoch).zfill(8)
 
@@ -121,6 +121,16 @@ class image_saver():
         if self.use_masks:
             painted_masks = self.paint_mask(fake["masks"])
             torchvision.utils.save_image(painted_masks, os.path.join(self.folder_images, epoch+"_mask"+self.ext))
+
+        if batch is not None:
+            images = (batch["images"][-1] + 1) / 2
+            torchvision.utils.save_image(images, os.path.join(self.folder_images, epoch+"_True"+self.ext))
+
+            if self.use_masks:
+                masks = batch["masks"]
+                torchvision.utils.save_image(masks, os.path.join(self.folder_images, epoch+"_mask"+"_True"+self.ext))
+
+
 
     def paint_mask(self, masks):
         ans = torch.zeros((masks.shape[0], 3, masks.shape[2], masks.shape[3]))

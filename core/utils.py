@@ -51,7 +51,7 @@ def preprocess_real(batch, num_blocks_ll, device):
     for item in batch:
         batch[item] = batch[item].to(device)
     # --- Create downsampled versions of real images for MSG --- #
-    ans = list()
+    ans   = list()
     image = batch["images"]
     ans.append(image)
     for i in range(num_blocks_ll-1):

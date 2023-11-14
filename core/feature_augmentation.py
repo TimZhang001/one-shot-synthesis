@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 import random
 
-
+# 进行特征维度的数据增强，进行不同的样本通道维度的交换，或者针对某个样本进行通道维度的置零
 class Content_FA(nn.Module):
     def __init__(self, use_masks, prob_FA_con, num_mask_channels=None):
         super(Content_FA, self).__init__()
-        self.prob = prob_FA_con
-        self.ranges = (0.10, 0.30)
+        self.prob      = prob_FA_con
+        self.ranges    = (0.10, 0.30)
         self.use_masks = use_masks
         if self.use_masks:
             self.num_mask_channels = num_mask_channels
@@ -16,16 +16,18 @@ class Content_FA(nn.Module):
         """
         Randomly swap channels of different instances
         """
-        bs = y.shape[0]
-        ch = y.shape[1]
+        bs  = y.shape[0]
+        ch  = y.shape[1]
         ans = y
         # ---  --- #
         if random.random() < self.prob:
             for i in range(0, bs - 1, 2):
                 num_first = int(ch * (torch.rand(1) * (self.ranges[1]-self.ranges[0]) + self.ranges[0]))
-                perm = torch.randperm(ch)
-                ch_first = perm[:num_first]
-                ans[i, ch_first, :, :] = y[i + 1, ch_first, :, :].clone()
+                perm      = torch.randperm(ch)
+                ch_first  = perm[:num_first]
+                
+                # 两个样本在通道维度上交换
+                ans[i,     ch_first, :, :] = y[i + 1, ch_first, :, :].clone()
                 ans[i + 1, ch_first, :, :] = y[i, ch_first, :, :].clone()
         return ans
 
@@ -33,29 +35,36 @@ class Content_FA(nn.Module):
         """
         Randomly zero out channels
         """
-        ch = y.shape[1]
+        ch  = y.shape[1]
         ans = y
         if random.random() < self.prob:
-            num_first = int(ch * (torch.rand(1) * (self.ranges[1]-self.ranges[0]) + self.ranges[0]))
+            num_first  = int(ch * (torch.rand(1) * (self.ranges[1]-self.ranges[0]) + self.ranges[0]))
             num_second = int(ch * (torch.rand(1) * (self.ranges[1]-self.ranges[0]) + self.ranges[0]))
-            perm = torch.randperm(ch)
-            ch_second = perm[num_first:num_first + num_second]
+            perm       = torch.randperm(ch)
+            ch_second  = perm[num_first:num_first + num_second]
             ans[:, ch_second, :, :] = 0
         return ans
 
     def forward(self, y):
         ans = y
-        if self.use_masks: # --- Apply only on background if masks are given --- #
+
+        # --- Apply only on background if masks are given --- #
+        if self.use_masks: 
             y = ans[:ans.shape[0]//self.num_mask_channels]
+        
         y = self.mix(y)
         y = self.drop(y)
+
+        # --- Apply only on background if masks are given --- #
         if self.use_masks:
             ans[:ans.shape[0]//self.num_mask_channels] = y
         else:
             ans = y
         return ans
 
+# ---------------------------------------------------------------------------------------------------------------
 
+# 进行特征图的数据增强，
 class Layout_FA(nn.Module):
     def __init__(self, use_masks, prob):
         super(Layout_FA, self).__init__()
@@ -65,30 +74,31 @@ class Layout_FA(nn.Module):
 
     def forward(self, y, masks):
         if self.use_masks:
-            mask_for_FA = torch.nn.functional.interpolate(masks, size=(y.shape[2], y.shape[3]), mode="nearest")
-            ans = self.func_with_mask(y, mask_for_FA)
+            mask_FA = torch.nn.functional.interpolate(masks, size=(y.shape[2], y.shape[3]), mode="nearest")
+            ans     = self.func_with_mask(y, mask_FA)
         else:
-            ans = self.func_without_mask(y)
+            ans     = self.func_without_mask(y)
         return ans
 
+    # 随机生成一个矩形，进行两个样本在特征图上的交换
     def func_without_mask(self, y):
         """
         If a segmentation mask is not provided, copy-paste rectangles in a random way
         """
-        bs = y.shape[0]
+        bs  = y.shape[0]
         ans = y.clone()
         for i in range(0, bs - 1, 2):
             if random.random() < self.prob:
                 x1, x2, y1, y2 = gen_rectangle(ans)
-                ans[i, :, x1:x2, y1:y2] = y[i + 1, :, x1:x2, y1:y2].clone()
-                ans[i + 1, :, x1:x2, y1:y2] = y[i, :, x1:x2, y1:y2].clone()
+                ans[i,     :, x1:x2, y1:y2] = y[i + 1, :, x1:x2, y1:y2].clone()
+                ans[i + 1, :, x1:x2, y1:y2] = y[i,     :, x1:x2, y1:y2].clone()
         return ans
 
     def func_with_mask(self, y, mask):
         """
         If a segmentation mask is provided, ensure that the copied areas never cut semantic boundaries
         """
-        ans_y = y.clone()
+        ans_y    = y.clone()
         ans_mask = mask.clone()
         ans_y, ans_mask = self.mix_background(ans_y, ans_mask)
         ans_y, ans_mask = self.swap(ans_y, ans_mask)
@@ -101,11 +111,13 @@ class Layout_FA(nn.Module):
         """
         for i in range(0, y.shape[0]):
             if random.random() < self.prob:
+                
+                # 生成两个不重叠的矩形框，且不与语义分割图的语义边界重叠
                 rect1, rect2 = gen_nooverlap_rectangles(y, mask)
                 if rect1[0] is not None:
                     x0_1, x0_2, y0_1, y0_2 = rect1
                     x1_1, x1_2, y1_1, y1_2 = rect2
-                    y[i, :, x0_1:x0_2, y0_1:y0_2] = y[i, :, x1_1:x1_2, y1_1:y1_2].clone()
+                    y[i,    :, x0_1:x0_2, y0_1:y0_2] = y[i,    :, x1_1:x1_2, y1_1:y1_2].clone()
                     mask[i, :, x0_1:x0_2, y0_1:y0_2] = mask[i, :, x1_1:x1_2, y1_1:y1_2].clone()
         return y, mask
 
@@ -113,28 +125,28 @@ class Layout_FA(nn.Module):
         """
         Copy-paste background and objects into other areas, without cutting semantic boundaries
         """
-        ans = y.clone()
+        ans  = y.clone()
         mask = mask_.clone()
         for i in range(0, y.shape[0] - 1, 2):
             if random.random() < self.prob:
                 for jj in range(5):
                     x1, x2, y1, y2 = gen_rectangle(y)
-                    rect = x1, x2, y1, y2
+                    rect           = x1, x2, y1, y2
                     if any_object_touched(rect, mask[i:i + 1]) or any_object_touched(rect, mask[i + 1:i + 2]):
                         continue
                     else:
-                        ans[i, :, x1:x2, y1:y2] = y[i + 1, :, x1:x2, y1:y2].clone()
-                        ans[i + 1, :, x1:x2, y1:y2] = y[i, :, x1:x2, y1:y2].clone()
-                        mem = mask_[i, :, x1:x2, y1:y2].clone()
-                        mask[i, :, x1:x2, y1:y2] = mask_[i + 1, :, x1:x2, y1:y2].clone()
+                        ans[i,     :, x1:x2, y1:y2]  = y[i + 1, :, x1:x2, y1:y2].clone()
+                        ans[i + 1, :, x1:x2, y1:y2]  = y[i,     :, x1:x2, y1:y2].clone()
+                        mem                          = mask_[i,     :, x1:x2, y1:y2].clone()
+                        mask[i,     :, x1:x2, y1:y2] = mask_[i + 1, :, x1:x2, y1:y2].clone()
                         mask[i + 1, :, x1:x2, y1:y2] = mem
                         break
             if random.random() < self.prob:
                 which_object = torch.randint(mask.shape[1] - 1, size=()) + 1
-                old_area = torch.argmax(mask[i], dim=0, keepdim=False) == which_object
+                old_area     = torch.argmax(mask[i], dim=0, keepdim=False) == which_object
                 if not area_cut_any_object(old_area, mask[i + 1]):
-                    ans[i+1] = ans[i].clone() * (old_area * 1.0) + ans[i+1].clone() * (1 - old_area * 1.0)
-                    mask[i+1] = mask[i] * (old_area * 1.0) + mask[i+1] * (1 - old_area * 1.0)
+                    ans[i+1]  = ans[i].clone() * (old_area * 1.0) + ans[i+1].clone() * (1 - old_area * 1.0)
+                    mask[i+1] = mask[i]        * (old_area * 1.0) + mask[i+1]        * (1 - old_area * 1.0)
         return ans, mask
 
     def move_objects(self, y, mask):
@@ -143,7 +155,7 @@ class Layout_FA(nn.Module):
         """
         for i in range(0, y.shape[0]):
             num_changed_objects = torch.randint(mask.shape[1] - 1, size=()) + 1
-            seq_classes = torch.randperm(mask.shape[1] - 1)[:num_changed_objects]
+            seq_classes         = torch.randperm(mask.shape[1] - 1)[:num_changed_objects]
             for cur_class in seq_classes:
                 old_area = torch.argmax(mask[i], dim=0, keepdim=False) == cur_class + 1  # +1 to avoid background
                 new_area = generate_new_area(old_area, mask[i])
@@ -156,14 +168,14 @@ class Layout_FA(nn.Module):
             return y, mask
 
 
-# --- geometric helper functions --- #
+# 生成矩形框
 def gen_rectangle(ans, w=-1, h=-1):
     x_c, y_c = random.random(), random.random()
     x_s, y_s = random.random()*0.4+0.1, random.random()*0.4+0.1
     x_l, x_r = x_c-x_s/2, x_c+x_s/2
     y_l, y_r = y_c-y_s/2, y_c+y_s/2
-    x1, x2 = int(x_l*ans.shape[2]), int(x_r*ans.shape[2])
-    y1, y2 = int(y_l*ans.shape[3]), int(y_r*ans.shape[3])
+    x1,  x2  = int(x_l*ans.shape[2]), int(x_r*ans.shape[2])
+    y1,  y2  = int(y_l*ans.shape[3]), int(y_r*ans.shape[3])
     if w < 0 or h < 0:
         pass
     else:
@@ -171,7 +183,7 @@ def gen_rectangle(ans, w=-1, h=-1):
     x1, x2, y1, y2 = trim_rectangle(x1, x2, y1, y2, ans.shape)
     return x1, x2, y1, y2
 
-
+# 保证生成的矩形框不会超出图像的边界
 def trim_rectangle(x1, x2, y1, y2, sh):
     if x1 < 0:
         x2 += (0 - x1)
@@ -192,20 +204,24 @@ def gen_nooverlap_rectangles(ans, mask):
     x0_1, x0_2, y0_1, y0_2 = gen_rectangle(ans)
     for i in range(5):
         x1_1, x1_2, y1_1, y1_2 = gen_rectangle(ans, w=x0_2-x0_1, h=y0_2-y0_1)
+        
+        # 保证两个矩形框不会重叠
         if not (x0_1 < x1_2 and x0_2 > x1_1 and y0_1 < y1_2 and y0_2 > y1_1):
             rect1, rect2 = [x0_1, x0_2, y0_1, y0_2], [x1_1, x1_2, y1_1, y1_2]
+            
+            # 保证两个矩形框不会与语义分割图的语义边界重叠
             if not any_object_touched(rect1, mask[i:i + 1]) and not any_object_touched(rect2, mask[i:i + 1]):
                 return [x0_1, x0_2, y0_1, y0_2], [x1_1, x1_2, y1_1, y1_2]
     return [None, None, None, None], [None, None, None, None]  # if not found a good pair
 
 
 def any_object_touched(rect, mask_):
-    epsilon = 0.01
-    x1, x2, y1, y2 = rect
-    mask = torch.zeros_like(mask_)
-    mask[:, 0, :, :] = mask_[:, 0, :, :]
+    epsilon            = 0.01
+    x1, x2, y1, y2     = rect
+    mask               = torch.zeros_like(mask_)
+    mask[:, 0, :, :]   = mask_[:, 0, :, :]
     mask[:, 1:2, :, :] = torch.sum(torch.abs(mask_[:, 1:, :, :]), dim=1, keepdim=True)
-    sum = torch.sum(mask[:, 1, x1:x2, y1:y2])
+    sum                = torch.sum(mask[:, 1, x1:x2, y1:y2])
     if sum > epsilon:
         return True
     return False
@@ -223,7 +239,7 @@ def area_cut_any_object(area, mask_):
 
 
 def generate_new_area(old_area, mask):
-    epsilon = 0.01
+    epsilon  = 0.01
     arg_mask = torch.argmax(mask, dim=0)
     if torch.sum(old_area) == 0:
         return None, None, None, None, None, None

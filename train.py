@@ -17,8 +17,8 @@ optimizerG, optimizerD = models.create_optimizers(netG, netD, opt)
 
 # --- create utils --- #
 utils.fix_seed(opt.seed)
-timer = utils.timer(opt)
-visualizer = tracking.visualizer(opt)
+timer        = utils.timer(opt)
+visualizer   = tracking.visualizer(opt)
 diff_augment = diff_augm.augment_pipe(opt)
 
 # --- training loop --- #
@@ -63,9 +63,9 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
         visualizer.save_networks(netG, netD, netEMA, epoch)
     if epoch % opt.freq_print == 0 or epoch == opt.num_epochs:
         timer(epoch)
-        z = utils.sample_noise(opt.noise_dim, 8).to(opt.device)
+        z    = utils.sample_noise(opt.noise_dim, 8).to(opt.device)
         fake = netEMA.generate(z) if opt.use_EMA else netG.generate(z)
-        visualizer.save_batch(fake, epoch)
+        visualizer.save_batch(fake, batch, epoch)
     if (epoch % opt.freq_save_loss == 0 or epoch == opt.num_epochs) and epoch > 0 :
         visualizer.save_losses_logits(epoch)
 

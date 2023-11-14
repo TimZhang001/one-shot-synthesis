@@ -33,8 +33,8 @@ class Dataset(torch.utils.data.Dataset):
         self.device = opt.device
         # --- images --- #
         self.root_images = os.path.join(opt.dataroot, opt.dataset_name, "image")
-        self.root_masks = os.path.join(opt.dataroot, opt.dataset_name, "mask")
-        self.list_imgs = self.get_frames_list(self.root_images)
+        self.root_masks  = os.path.join(opt.dataroot, opt.dataset_name, "mask")
+        self.list_imgs   = self.get_frames_list(self.root_images)
         assert len(self.list_imgs) > 0, "Found no images"
         self.image_resolution, self.recommended_config = get_recommended_config(self.get_im_resolution(opt.max_size))
 
@@ -47,7 +47,7 @@ class Dataset(torch.utils.data.Dataset):
                 assert os.path.splitext(self.list_imgs[i])[0] == os.path.splitext(self.list_masks[i])[0], \
                 "Image and its mask must have same names %s - %s" % (self.list_imgs[i], self.list_masks[i])
             self.num_mask_channels = self.get_num_mask_channels()
-            self.use_masks = True
+            self.use_masks         = True
         else:
             self.use_masks = False
             self.num_mask_channels = None
@@ -100,7 +100,7 @@ class Dataset(torch.utils.data.Dataset):
                 max_index = 2 if max_index < 2 else max_index
             else:
                 # --- multiple semantic objects --- #
-                cur_max = torch.max(torch.round(im * 256))
+                cur_max   = torch.max(torch.round(im * 256))
                 max_index = cur_max + 1 if max_index < cur_max + 1 else max_index
         return int(max_index)
 
@@ -115,26 +115,26 @@ class Dataset(torch.utils.data.Dataset):
         else:
             # --- multiple semantic objects --- #
             integers = torch.round(mask * 256)
-            mask = torch.nn.functional.one_hot(integers.long(), num_classes=self.num_mask_channels)
-            mask = mask.float()[0].permute(2, 0, 1)
+            mask     = torch.nn.functional.one_hot(integers.long(), num_classes=self.num_mask_channels)
+            mask     = mask.float()[0].permute(2, 0, 1)
             return mask
 
     def __getitem__(self, index):
-        output = dict()
-        idx = index % len(self.list_imgs)
+        output      = dict()
+        idx         = index % len(self.list_imgs)
         target_size = self.image_resolution
 
         # --- image ---#
         img_pil = Image.open(os.path.join(self.root_images, self.list_imgs[idx])).convert("RGB")
-        img = F.to_tensor(F.resize(img_pil, size=target_size))
-        img = (img - 0.5) * 2
+        img     = F.to_tensor(F.resize(img_pil, size=target_size))
+        img     = (img - 0.5) * 2
         output["images"] = img
 
         # --- mask ---#
         if self.use_masks:
             mask_pil = Image.open(os.path.join(self.root_masks, self.list_imgs[idx][:-4] + ".png"))
-            mask = F.to_tensor(F.resize(mask_pil, size=target_size, interpolation=Image.NEAREST))
-            mask = self.create_mask_channels(mask)  # mask should be N+1 channels
+            mask     = F.to_tensor(F.resize(mask_pil, size=target_size, interpolation=Image.NEAREST))
+            mask     = self.create_mask_channels(mask)  # mask should be N+1 channels
             output["masks"] = mask
             assert img.shape[1:] == mask.shape[1:], "Image and mask must have same dims %s" % (self.list_imgs[idx])
         return output

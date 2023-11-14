@@ -18,4 +18,4 @@ visualizer = tracking.visualizer(opt)
 for i in range(opt.num_generated):
     z = utils.sample_noise(opt.noise_dim, 1).to(opt.device)
     fake = netEMA.generate(z) if opt.use_EMA else netG.generate(z)
-    visualizer.save_batch(fake, opt.continue_epoch, i=str(i))
+    visualizer.save_batch(fake, None, opt.continue_epoch, i=str(i))

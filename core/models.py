@@ -93,11 +93,11 @@ def get_channels(which_net, base_multipler):
 class Generator(nn.Module):
     def __init__(self, config_G):
         super(Generator, self).__init__()
-        self.num_blocks = config_G["num_blocks_g"]
-        self.noise_shape = config_G["noise_shape"]
+        self.num_blocks     = config_G["num_blocks_g"]
+        self.noise_shape    = config_G["noise_shape"]
         self.noise_init_dim = config_G["noise_dim"]
-        self.norm_name = config_G["norm_G"]
-        self.use_masks = config_G["use_masks"]
+        self.norm_name      = config_G["norm_G"]
+        self.use_masks      = config_G["use_masks"]
         self.num_mask_channels = config_G["num_mask_channels"]
         num_of_channels = get_channels("Generator", config_G["ch_G"])[-self.num_blocks-1:]
 
@@ -113,13 +113,13 @@ class Generator(nn.Module):
         print("Created Generator with %d parameters" % (sum(p.numel() for p in self.parameters())))
 
     def generate(self, z, get_feat=False):
-        output = dict()
+        output     = dict()
         ans_images = list()
-        ans_feat = list()
-        x = self.first_linear(z)
+        ans_feat   = list()
+        x = self.first_linear(z)  # 映射层
         for i in range(self.num_blocks):
-            x = self.body[i](x)
-            im = torch.tanh(self.rgb_converters[i](x))
+            x  = self.body[i](x)                       # 特征 
+            im = torch.tanh(self.rgb_converters[i](x)) # 图像
             ans_images.append(im)
             ans_feat.append(torch.tanh(x))
         output["images"] = ans_images
@@ -137,12 +137,12 @@ class G_block(nn.Module):
     def __init__(self, in_channel, out_channel, norm_name, is_first):
         super(G_block, self).__init__()
         middle_channel = min(in_channel, out_channel)
-        self.ups = nn.Upsample(scale_factor=2) if not is_first else torch.nn.Identity()
+        self.ups   = nn.Upsample(scale_factor=2) if not is_first else torch.nn.Identity()
         self.activ = nn.LeakyReLU(0.2)
         self.conv1 = sp_norm(nn.Conv2d(in_channel,  middle_channel, 3, padding=1))
         self.conv2 = sp_norm(nn.Conv2d(middle_channel, out_channel, 3, padding=1))
-        self.norm1  = get_norm_by_name(norm_name, in_channel)
-        self.norm2  = get_norm_by_name(norm_name, middle_channel)
+        self.norm1 = get_norm_by_name(norm_name, in_channel)
+        self.norm2 = get_norm_by_name(norm_name, middle_channel)
         self.conv_sc = sp_norm(nn.Conv2d(in_channel, out_channel, (1, 1), bias=False))
 
     def forward(self, x):
@@ -162,33 +162,33 @@ class G_block(nn.Module):
 class Discriminator(nn.Module):
     def __init__(self, config_D):
         super(Discriminator, self).__init__()
-        self.num_blocks = config_D["num_blocks_d"]
+        self.num_blocks    = config_D["num_blocks_d"]
         self.num_blocks_ll = config_D["num_blocks_d0"]
-        self.norm_name = config_D["norm_D"]
-        self.prob_FA = {"content": config_D["prob_FA_con"], "layout": config_D["prob_FA_lay"]}
-        self.use_masks = config_D["use_masks"]
+        self.norm_name     = config_D["norm_D"]
+        self.prob_FA       = {"content": config_D["prob_FA_con"], "layout": config_D["prob_FA_lay"]}
+        self.use_masks     = config_D["use_masks"]
         self.num_mask_channels = config_D["num_mask_channels"]
-        self.bernoulli_warmup = config_D["bernoulli_warmup"]
-        num_of_channels = get_channels("Discriminator", config_D["ch_D"])[:self.num_blocks + 1]
+        self.bernoulli_warmup  = config_D["bernoulli_warmup"]
+        num_of_channels        = get_channels("Discriminator", config_D["ch_D"])[:self.num_blocks + 1]
         if self.use_masks:
             for i in range(self.num_blocks_ll+1, self.num_blocks):
                 num_of_channels[i] = int(num_of_channels[i] * 2)
         self.feature_prev_ratio = 8  # for msg concatenation
 
-        self.body_ll, self.body_content, self.body_layout = nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([])
-        self.rgb_to_features = nn.ModuleList([])  # for msg concatenation
+        self.body_ll,  self.body_content,  self.body_layout  = nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([])
         self.final_ll, self.final_content, self.final_layout = nn.ModuleList([]), nn.ModuleList([]), nn.ModuleList([])
+        self.rgb_to_features = nn.ModuleList([])  # for msg concatenation
 
-        # --- D low-level --- #
+        # --------- D low-level --------- #
         for i in range(self.num_blocks_ll):
             msg_channels = num_of_channels[i] // self.feature_prev_ratio if i > 0 else num_of_channels[0]
-            in_channels = num_of_channels[i] + msg_channels if i > 0 else num_of_channels[0]
-            cur_block = D_block(in_channels, num_of_channels[i+1], self.norm_name, is_first=i == 0)
+            in_channels  = num_of_channels[i] + msg_channels if i > 0 else num_of_channels[0]
+            cur_block    = D_block(in_channels, num_of_channels[i+1], self.norm_name, is_first=i == 0)
             self.body_ll.append(cur_block)
             self.rgb_to_features.append(from_rgb(msg_channels))
             self.final_ll.append(to_decision(num_of_channels[i+1], 1))
 
-        # --- D content --- #
+        # --------- D content --------- #
         self.content_FA = Content_FA(self.use_masks, self.prob_FA["content"], self.num_mask_channels)
         for i in range(self.num_blocks_ll, self.num_blocks):
             k = i - self.num_blocks_ll
@@ -197,7 +197,7 @@ class Discriminator(nn.Module):
             out_channels = 1 if not self.use_masks else self.num_mask_channels + 1
             self.final_content.append(to_decision(num_of_channels[i + 1], out_channels))
 
-        # --- D layout --- #
+        # --------- D layout --------- #
         self.layout_FA = Layout_FA(self.use_masks, self.prob_FA["layout"])
         for i in range(self.num_blocks_ll, self.num_blocks):
             k = i - self.num_blocks_ll
@@ -227,7 +227,7 @@ class Discriminator(nn.Module):
         masks  = inputs["masks"] if self.use_masks else None
         output_ll, output_content, output_layout = list(), list(), list(),
 
-        # --- D low-level --- #
+        # --------- D low-level --------- #
         y = self.rgb_to_features[0](images[-1])
         for i in range(0, self.num_blocks_ll):
             if i > 0:
@@ -235,24 +235,25 @@ class Discriminator(nn.Module):
             y = self.body_ll[i](y)
             output_ll.append(self.final_ll[i](y))
 
-        # --- D content --- #
+        # --------- D content --------- #
         y_con = y
         if self.use_masks:
             y_con = self.content_masked_attention(y, masks, for_real, epoch)
         y_con = torch.mean(y_con, dim=(2, 3), keepdim=True)
+        
         if for_real:
             y_con = self.content_FA(y_con)
         for i in range(self.num_blocks_ll, self.num_blocks):
-            k = i - self.num_blocks_ll
+            k     = i - self.num_blocks_ll
             y_con = self.body_content[k](y_con)
             output_content.append(self.final_content[k](y_con))
 
-        # --- D layout --- #
+        # --------- D layout --------- #
         y_lay = y
         if for_real:
             y_lay = self.layout_FA(y, masks)
         for i in range(self.num_blocks_ll, self.num_blocks):
-            k = i - self.num_blocks_ll
+            k     = i - self.num_blocks_ll
             y_lay = self.body_layout[k](y_lay)
             output_layout.append(self.final_layout[k](y_lay))
 
