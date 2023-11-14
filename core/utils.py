@@ -22,7 +22,14 @@ class timer():
         with open(self.file_name, "a") as log_file:
             log_file.write('--- Started training --- \n')
 
-    def __call__(self, epoch):
+    def get_loss_item(self, loss_item_G, loss_item_Dreal, loss_item_Dfake):
+        loss_item          = dict()
+        loss_item["G"]     = loss_item_G
+        loss_item["Dreal"] = loss_item_Dreal
+        loss_item["Dfake"] = loss_item_Dfake
+        self.loss_item = loss_item
+    
+    __call__(self, epoch):
         if epoch != 0:
             avg = (time.time() - self.prev_time) / (epoch - self.prev_epoch)
         else:
@@ -31,9 +38,13 @@ class timer():
         self.prev_epoch = epoch
 
         with open(self.file_name, "a") as log_file:
-            log_file.write('[epoch %d/%d], avg time:%.3f per epoch \n' % (epoch, self.num_epochs, avg))
-        print('[epoch %d/%d], avg time:%.3f per epoch' % (epoch, self.num_epochs, avg))
+            log_file.write('[epoch %d/%d], avg time:%.3f per epoch, G_loss:%.5f, Dreal_loss:%.5f, Dfake_loss:%.5f \n' % (epoch, self.num_epochs, avg, \
+                                                                                                                         self.loss_item["G"], self.loss_item["Dreal"], self.loss_item["Dfake"]))
+        print('[epoch %d/%d], avg time:%.3f per epoch, G_loss:%.5f, Dreal_loss:%.5f, Dfake_loss:%.5f' % (epoch, self.num_epochs, avg, \
+                                                                                                         self.loss_item["G"], self.loss_item["Dreal"], self.loss_item["Dfake"]))
         return avg
+
+
 
 
 def update_EMA(netEMA, netG, EMA_decay):

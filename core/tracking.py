@@ -22,8 +22,8 @@ class visualizer():
         self.image_saver   = image_saver(folder_images, opt.use_masks, opt.phase, opt.continue_epoch)
         self.network_saver = network_saver(folder_networks, opt.use_EMA)
 
-    def track_losses_logits(self, logits, losses):
-        self.losses_saver.track(logits, losses)
+    def track_losses_logits(self, logits, losses, loss_item):
+        self.losses_saver.track(logits, losses, loss_item)
 
     def save_losses_logits(self, epoch):
         self.losses_saver.save(epoch)
@@ -67,13 +67,13 @@ class losses_saver():
                 cou += 1
         return ans / cou
 
-    def track(self, logits, losses):
+    def track(self, logits, losses, loss_item):
         # --- losses --- #
         for loss_type in losses:
             for loss_part in losses[loss_type]:
-                self.cur_estimates[loss_type+"__"+loss_part] = self.cur_estimates.get(loss_type+"__"+loss_part, 0) + \
-                                                        float(losses[loss_type][loss_part].detach().cpu())
-                self.cur_count[loss_type+"__"+loss_part] = self.cur_count.get(loss_type+"__"+loss_part, 0) + 1
+                self.cur_estimates[loss_type+"__"+loss_part] = self.cur_estimates.get(loss_type+"__"+loss_part, 0) + float(losses[loss_type][loss_part].detach().cpu())
+                self.cur_count[loss_type+"__"+loss_part]     = self.cur_count.get(loss_type+"__"+loss_part, 0) + 1
+        
         if self.counter % self.freq_smooth == self.freq_smooth - 1:
             for loss in self.cur_estimates:
                 self.losses[loss] = self.losses.get(loss, []) + [str("{:8.5f}".format(self.cur_estimates[loss] / self.cur_count[loss]))]
@@ -82,6 +82,7 @@ class losses_saver():
         # --- logits --- #
         for item in ["Dreal", "Dfake"]:
             self.cur_log[item] = self.cur_log.get(item, []) + [self.collect_logits(logits[item])]
+        
         if self.counter % self.freq_smooth == self.freq_smooth - 1:
             for item in ["Dreal", "Dfake"]:
                 self.logits[item+".1"] = self.logits.get(item+".1", []) + [str("{:8.5f}".format(quant(self.cur_log[item], 0.1)))]

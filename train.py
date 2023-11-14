@@ -34,6 +34,7 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
     logits["G"] = netD.discriminate(out_G, for_real=False, epoch=epoch)
     losses["G"] = losses_computer(logits["G"], out_G, real=True, forD=False)
     loss = sum(losses["G"].values())
+    loss_item_G = loss.item()
     loss.backward(retain_graph=True)
     optimizerG.step()
 
@@ -43,6 +44,7 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
     logits["Dreal"] = netD.discriminate(batch, for_real=True, epoch=epoch)
     losses["Dreal"] = losses_computer(logits["Dreal"], batch, real=True, forD=True)
     loss = sum(losses["Dreal"].values())
+    loss_item_Dreal = loss.item()
     loss.backward(retain_graph=True)
 
     z = utils.sample_noise(opt.noise_dim, opt.batch_size).to(opt.device)
@@ -52,16 +54,22 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
     logits["Dfake"] = netD.discriminate(out_G, for_real=False, epoch=epoch)
     losses["Dfake"] = losses_computer(logits["Dfake"], out_G, real=False, forD=True)
     loss = sum(losses["Dfake"].values())
+    loss_item_Dfake = loss.item()
     loss.backward(retain_graph=True)
     optimizerD.step()
 
     # --- stats tracking --- #
-    visualizer.track_losses_logits(logits, losses)
+    loss_item = dict()
+    loss_item["G"]      = loss_item_G
+    loss_item["Dreal"]  = loss_item_Dreal
+    loss_item["Dfake"]  = loss_item_Dfake
+    visualizer.track_losses_logits(logits, losses, loss_item)
     if opt.use_EMA:
         netEMA = utils.update_EMA(netEMA, netG, opt.EMA_decay)
     if epoch % opt.freq_save_ckpt == 0 or epoch == opt.num_epochs:
         visualizer.save_networks(netG, netD, netEMA, epoch)
     if epoch % opt.freq_print == 0 or epoch == opt.num_epochs:
+        timer.get_loss_item(loss_item_G, loss_item_Dreal, loss_item_Dfake)
         timer(epoch)
         z    = utils.sample_noise(opt.noise_dim, 8).to(opt.device)
         fake = netEMA.generate(z) if opt.use_EMA else netG.generate(z)
