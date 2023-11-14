@@ -76,7 +76,7 @@ class losses_saver():
                 self.cur_count[loss_type+"__"+loss_part] = self.cur_count.get(loss_type+"__"+loss_part, 0) + 1
         if self.counter % self.freq_smooth == self.freq_smooth - 1:
             for loss in self.cur_estimates:
-                self.losses[loss] = self.losses.get(loss, []) + [str(self.cur_estimates[loss] / self.cur_count[loss])]
+                self.losses[loss] = self.losses.get(loss, []) + [str("{:8.5f}".format(self.cur_estimates[loss] / self.cur_count[loss]))]
             self.cur_estimates, self.cur_count = dict(), dict()
 
         # --- logits --- #
@@ -84,9 +84,9 @@ class losses_saver():
             self.cur_log[item] = self.cur_log.get(item, []) + [self.collect_logits(logits[item])]
         if self.counter % self.freq_smooth == self.freq_smooth - 1:
             for item in ["Dreal", "Dfake"]:
-                self.logits[item+".1"] = self.logits.get(item+".1", []) + [str(quant(self.cur_log[item], 0.1))]
-                self.logits[item+".5"] = self.logits.get(item+".5", []) + [str(quant(self.cur_log[item], 0.5))]
-                self.logits[item+".9"] = self.logits.get(item+".9", []) + [str(quant(self.cur_log[item], 0.9))]
+                self.logits[item+".1"] = self.logits.get(item+".1", []) + [str("{:8.5f}".format(quant(self.cur_log[item], 0.1)))]
+                self.logits[item+".5"] = self.logits.get(item+".5", []) + [str("{:8.5f}".format(quant(self.cur_log[item], 0.5)))]
+                self.logits[item+".9"] = self.logits.get(item+".9", []) + [str("{:8.5f}".format(quant(self.cur_log[item], 0.9)))]
             self.cur_estimates_log = dict()
         self.counter += 1
 
@@ -94,11 +94,43 @@ class losses_saver():
         # --- losses --- #
         with open(os.path.join(self.folder_losses, "losses.csv"), "w") as f:
             for item in self.losses:
-                f.writelines([item, ",", ",".join(self.losses[item]), "\n"])
+                f.writelines([item.ljust(20), ",", ",".join(self.losses[item]), "\n"])
+
+        with open(os.path.join(self.folder_losses, "losses_col.csv"), "w") as f:
+            # 获取列名
+            columns = list(self.losses.keys())
+
+            # 列名前面增加一个Epoch
+            #columns = ["Epoch"] + columns
+
+            # 确保key长度至少为10，并且之间有空格
+            columns1 = ["{:<20}".format(col) for col in columns]
+            f.writelines(",".join(columns1) + "\n")
+
+            # 获取每一列的数据，并按照格式写入文件
+            for i in range(len(self.losses[columns[0]])):
+                # 将数字打印在key的中间
+                line = ",".join([f"{float(self.losses[col][i]):^20.5f}" for col in columns]) + "\n"
+                f.writelines(line)
+        
         # --- logits --- #
         with open(os.path.join(self.folder_losses, "logits.csv"), "w") as f:
             for item in self.logits:
-                f.writelines([item, ",", ",".join(self.logits[item]), "\n"])
+                f.writelines([item.ljust(10), ",", ",".join(self.logits[item]), "\n"])
+
+        # --- logits --- #
+        with open(os.path.join(self.folder_losses, "logits_col.csv"), "w") as f:
+            # 获取列名
+            columns = list(self.logits.keys())
+            # 确保key长度至少为8，并且之间有空格
+            columns1 = ["{:<10}".format(col) for col in columns]
+            f.writelines(",".join(columns1) + "\n")
+
+            # 获取每一列的数据，并按照格式写入文件
+            for i in range(len(self.logits[columns[0]])):
+                # 将数字打印在key的中间
+                line = ",".join([f"{float(self.logits[col][i]):^10.5f}" for col in columns]) + "\n"
+                f.writelines(line)
 
 
 class image_saver():
@@ -128,8 +160,7 @@ class image_saver():
 
             if self.use_masks:
                 masks = batch["masks"]
-                torchvision.utils.save_image(masks, os.path.join(self.folder_images, epoch+"_mask"+"_True"+self.ext))
-
+                torchvision.utils.save_image(masks, os.path.join(self.folder_images, epoch+"_True"+"_mask"+self.ext))
 
 
     def paint_mask(self, masks):
