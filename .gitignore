@@ -9,3 +9,4 @@ datasets/mvtec/005_back.png
 datasets/mvtec/005.json
 image_tools.py
 output/aug_image/
+output

@@ -1,6 +1,9 @@
 import os
 import torch
 import warnings
+import cv2
+import albumentations as Augment
+import numpy as np
 from PIL import Image
 from torchvision import transforms as TR
 import torchvision.transforms.functional as F
@@ -59,6 +62,87 @@ class Dataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return 100000000  # so first epoch finishes only with break
+    
+    # 根据image对应的mask，将缺陷区域copy到Object区域
+    # mask最多只有3个值，0，1，2 或者 0，1，如果是0，1，2，那么0是背景，1是object，2是Object上的缺陷，如果是0，1，那么0是背景，1是缺陷
+    def copy_paste_defect(self, img, mask):
+        # 判断mask包含几个值
+        assert len(mask.unique()) == 2 or  len(mask.unique()) == 3, "mask must have 2 or 3 unique values"
+        
+        if len(mask.unique()) == 2:
+            # 找到mask==1的区域，得到对应的Rect
+            # 进行图像的二值化操作
+            mask_bw = np.where(mask >= 1, 255, 0).astype(np.uint8)
+
+            # 统计连通域
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_bw, connectivity=8)
+            
+            # 计算连通域对应的外接矩形
+            rects = []
+            for i in range(1, num_labels):
+                rects.append(cv2.boundingRect(labels == i))
+            
+            # img和mask
+            sub_images = img(rects)
+            sub_masks  = mask(rects)
+
+            # 将sub_images中的缺陷区域copy到img中
+
+
+
+            pass
+        else:
+            pass
+
+    
+    def get_augmentations(self, target_size):
+
+        # 进行resize
+        aug_resize      = Augment.Resize(height=target_size[0], width=target_size[1], p=1)
+        
+        # 进行水平垂直翻转
+        aug_flip        = Augment.Compose([Augment.VerticalFlip(p=0.5), Augment.HorizontalFlip(p=0.5),])
+        
+        # 90度旋转
+        aug_rotate90    = Augment.RandomRotate90(p=0.5)
+
+        # 随机旋转
+        #aug_scaleRotate = Augment.ShiftScaleRotate(shift_limit=0.10, scale_limit=0.10, rotate_limit=45, p=0.5)
+
+        # 亮度/对比度拉升
+        aug_brtContrast = Augment.RandomBrightnessContrast(brightness_limit=0.05, contrast_limit=0.05, p=0.5)
+        
+        # 增加GaussNoise噪声
+        #aug_noise       = Augment.GaussNoise(p=0.5)
+
+        # RandomGravel
+        #aug_gravel      = Augment.RandomGravel(p=0.5)
+
+        # HueSaturationValue
+        aug_hueSat      = Augment.HueSaturationValue(p=0.5)
+
+        # RGBShift
+        aug_rgbShift    = Augment.RGBShift(r_shift_limit=10, g_shift_limit=10, b_shift_limit=10, p=0.5)
+
+        # MultiplicativeNoise
+        # aug_multiNoise  = Augment.MultiplicativeNoise(p=0.5)
+
+        # FancyPCA
+        #aug_fancyPCA    = Augment.FancyPCA(p=0.5)
+
+        # ColorJitter
+        aug_colorJitter = Augment.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.5)
+
+        # Sharpen
+        #aug_sharpen     = Augment.Sharpen(p=0.5, alpha=(0.1, 0.25), lightness=(0.75, 1.0))
+
+        # PixelDropout
+        # aug_pixelDrop   = Augment.PixelDropout(p=0.5)
+
+        # 组合
+        self.augment_fun = Augment.Compose([aug_resize, aug_flip, aug_rotate90, aug_brtContrast,
+                                            aug_hueSat, aug_rgbShift,
+                                            aug_colorJitter])
 
     def get_im_resolution(self, max_size):
         """
@@ -124,20 +208,42 @@ class Dataset(torch.utils.data.Dataset):
         idx         = index % len(self.list_imgs)
         target_size = self.image_resolution
 
+        # --- read image and mask --- #
+        img_pil  = Image.open(os.path.join(self.root_images, self.list_imgs[idx])).convert("RGB")
+        if self.use_masks:
+            mask_pil = Image.open(os.path.join(self.root_masks, self.list_imgs[idx][:-4] + ".png"))
+        
+        # --- augmentations --- #
+        if 1:
+            self.get_augmentations(target_size= target_size)
+            if self.use_masks:
+                # 转化为float32
+                #img_pil     = img_pil.astype(np.float32)
+                #mask_pil    = mask_pil.astype(np.float32)
+                img_augment = self.augment_fun(image = np.array(img_pil), mask = np.array(mask_pil))
+                img_pil     = Image.fromarray(img_augment["image"])
+                mask_pil    = Image.fromarray(img_augment["mask"])
+            else:
+                #img_pil     = img_pil.astype(np.float32)
+                img_augment = self.augment_fun(image = np.array(img_pil))
+                img_pil     = Image.fromarray(img_augment["image"])
+            
+
         # --- image ---#
-        img_pil = Image.open(os.path.join(self.root_images, self.list_imgs[idx])).convert("RGB")
+        #img_pil = Image.open(os.path.join(self.root_images, self.list_imgs[idx])).convert("RGB")
         img     = F.to_tensor(F.resize(img_pil, size=target_size))
         img     = (img - 0.5) * 2
         output["images"] = img
 
         # --- mask ---#
         if self.use_masks:
-            mask_pil = Image.open(os.path.join(self.root_masks, self.list_imgs[idx][:-4] + ".png"))
+            #mask_pil = Image.open(os.path.join(self.root_masks, self.list_imgs[idx][:-4] + ".png"))
             mask     = F.to_tensor(F.resize(mask_pil, size=target_size, interpolation=Image.NEAREST))
             mask     = self.create_mask_channels(mask)  # mask should be N+1 channels
             output["masks"] = mask
             assert img.shape[1:] == mask.shape[1:], "Image and mask must have same dims %s" % (self.list_imgs[idx])
         return output
+
 
 
 

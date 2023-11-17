@@ -1,11 +1,13 @@
 import config
 from core import dataloading, models, utils, losses, tracking
 from core.differentiable_augmentation import diff_augm
+from core.utils import get_init_x
 import torch
 
 
 # --- read options --- #
-opt = config.read_arguments(train=True)
+opt      = config.read_arguments(train=True)
+use_aug1 = 0
 
 # --- create dataloader and recommended model config --- #
 dataloader, model_config = dataloading.prepare_dataloading(opt)
@@ -26,11 +28,14 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
     batch = utils.preprocess_real(batch, netD.num_blocks_ll, opt.device)
     logits, losses = dict(), dict()
 
+    init_x_repeat = None #get_init_x(batch) 
+    
     # --- generator update --- #
     netG.zero_grad()
     z     = utils.sample_noise(opt.noise_dim, opt.batch_size).to(opt.device)
-    out_G = netG.generate(z, get_feat=opt.use_DR)
-    out_G = diff_augment(out_G)
+    out_G = netG.generate(z, get_feat=opt.use_DR, init_x=init_x_repeat)
+    if use_aug1:
+        out_G = diff_augment(out_G)
     logits["G"] = netD.discriminate(out_G, for_real=False, epoch=epoch)
     losses["G"] = losses_computer(logits["G"], out_G, real=True, forD=False)
     loss = sum(losses["G"].values())
@@ -40,7 +45,8 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
 
     # --- discriminator update --- #
     netD.zero_grad()
-    batch = diff_augment(batch)
+    if use_aug1:
+        batch = diff_augment(batch)
     logits["Dreal"] = netD.discriminate(batch, for_real=True, epoch=epoch)
     losses["Dreal"] = losses_computer(logits["Dreal"], batch, real=True, forD=True)
     loss = sum(losses["Dreal"].values())
@@ -49,8 +55,9 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
 
     z = utils.sample_noise(opt.noise_dim, opt.batch_size).to(opt.device)
     with torch.no_grad():
-        out_G = netG.generate(z)  # fake
-    out_G = diff_augment(out_G)
+        out_G = netG.generate(z, get_feat=False, init_x=init_x_repeat)  # fake
+    if use_aug1:
+        out_G = diff_augment(out_G)
     logits["Dfake"] = netD.discriminate(out_G, for_real=False, epoch=epoch)
     losses["Dfake"] = losses_computer(logits["Dfake"], out_G, real=False, forD=True)
     loss = sum(losses["Dfake"].values())
@@ -83,3 +90,5 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
 
 # --- after training ---#
 print("Succesfully finished")
+
+

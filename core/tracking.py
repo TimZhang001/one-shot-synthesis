@@ -50,12 +50,13 @@ class losses_saver():
     def load(self, lst):
         ans = list()
         for item in lst:
-            cur_dict = dict()
-            with open(os.path.join(self.folder_losses, item+".csv"), "r") as f:
-                cur_file = f.readlines()
-            for line in cur_file:
-                elements = line.replace("\n", "").split(",")
-                cur_dict[elements[0]] = elements[1:]
+            cur_dict = dict()         
+            if os.path.exists(os.path.join(self.folder_losses, item+".csv")):
+                with open(os.path.join(self.folder_losses, item+".csv"), "r") as f:
+                    cur_file = f.readlines()
+                for line in cur_file:
+                    elements = line.replace("\n", "").split(",")
+                    cur_dict[elements[0]] = elements[1:]
             ans.append(cur_dict)
         return ans
 
@@ -91,7 +92,10 @@ class losses_saver():
             self.cur_estimates_log = dict()
         self.counter += 1
 
-    def save(self, epoch):
+    def save(self, epoch):        
+        if len(self.losses) == 0:
+            return
+        
         # --- losses --- #
         with open(os.path.join(self.folder_losses, "losses.csv"), "w") as f:
             for item in self.losses:
@@ -161,6 +165,11 @@ class image_saver():
 
             if self.use_masks:
                 masks = batch["masks"]
+                if masks.shape[1] == 1:
+                    masks = masks.repeat(1, 3, 1, 1)
+                elif masks.shape[1] == 2:
+                    # 在第二个维度上补充0，增加一个维度
+                    masks = torch.cat([masks, torch.zeros_like(masks[:, 0:1])], dim=1)
                 torchvision.utils.save_image(masks, os.path.join(self.folder_images, epoch+"_True"+"_mask"+self.ext))
 
 

@@ -5,7 +5,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.nn.utils.spectral_norm as sp_norm
 import copy
-from .utils import to_rgb, from_rgb, to_decision, get_norm_by_name
+from .utils import to_rgb, from_rgb, to_decision, get_norm_by_name, print_model_parameters
 from .feature_augmentation import Content_FA, Layout_FA
 
 
@@ -26,6 +26,14 @@ def create_models(opt, recommended_config):
         netD.apply(weights_init)
     else:
         netD = None
+
+    # --- summary network of generator and discriminator--- #
+    if opt.phase == "train":
+        print("\nGenerator summary:\n")
+        print_model_parameters(netG)
+        
+        print("\nDiscriminator summary:\n")
+        print_model_parameters(netD)
 
     # --- load previous ckpt  --- #
     path = os.path.join(opt.checkpoints_dir, opt.exp_name, "models")
@@ -112,11 +120,15 @@ class Generator(nn.Module):
             self.mask_converter = nn.Conv2d(num_of_channels[i+1], self.num_mask_channels, 3, padding=1, bias=True)
         print("Created Generator with %d parameters" % (sum(p.numel() for p in self.parameters())))
 
-    def generate(self, z, get_feat=False):
+    def generate(self, z, get_feat=False, init_x = None):
         output     = dict()
         ans_images = list()
         ans_feat   = list()
         x = self.first_linear(z)  # 映射层
+
+        if init_x is not None:
+            x = x + 0.25 * init_x
+
         for i in range(self.num_blocks):
             x  = self.body[i](x)                       # 特征 
             im = torch.tanh(self.rgb_converters[i](x)) # 图像
@@ -209,7 +221,7 @@ class Discriminator(nn.Module):
               (self.num_blocks_ll, self.num_blocks-self.num_blocks_ll, sum(p.numel() for p in self.parameters())))
 
     def content_masked_attention(self, y, mask, for_real, epoch):
-        mask = F.interpolate(mask, size=(y.shape[2], y.shape[3]), mode="nearest")
+        mask  = F.interpolate(mask, size=(y.shape[2], y.shape[3]), mode="nearest")
         y_ans = torch.zeros_like(y).repeat(mask.shape[1], 1, 1, 1)
         if not for_real:
             mask_soft = mask

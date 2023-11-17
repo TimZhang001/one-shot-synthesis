@@ -29,7 +29,7 @@ class timer():
         loss_item["Dfake"] = loss_item_Dfake
         self.loss_item = loss_item
     
-    __call__(self, epoch):
+    def __call__(self, epoch):
         if epoch != 0:
             avg = (time.time() - self.prev_time) / (epoch - self.prev_epoch)
         else:
@@ -46,6 +46,29 @@ class timer():
 
 
 
+def get_init_x(batch):
+    # --- get init x --- #
+    init_x = batch["images"][0].clone().detach()
+
+    # 对第一个和第二个维度计算均值
+    init_x_mean = torch.mean(init_x, dim=(0, 1), keepdim=True)
+
+    # reize 到5*5
+    init_x_resize = torch.nn.functional.interpolate(init_x_mean, size=(5, 5), mode="bilinear", align_corners=False)
+
+    # repeat 5*256*1*1
+    init_x_repeat = init_x_resize.repeat(5, 256, 1, 1)
+
+    return init_x_repeat
+
+
+def print_model_parameters(model):
+    total_params = 0
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(f"Layer: {name}, Parameters: {param.numel()}")
+            total_params += param.numel()
+    print(f"Total Parameters: {total_params}")
 
 def update_EMA(netEMA, netG, EMA_decay):
     with torch.no_grad():

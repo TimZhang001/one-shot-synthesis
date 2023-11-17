@@ -8,6 +8,7 @@ def read_arguments(train=True):
     opt    = parser.parse_args()
     continue_train = opt.continue_train
     num_epochs     = opt.num_epochs
+    which_epoch    = opt.which_epoch
     if opt.continue_train or not train:
         update_options_from_file(opt, parser)
         
@@ -19,7 +20,7 @@ def read_arguments(train=True):
     if train:
         opt.continue_epoch = 0 if not opt.continue_train else load_iter(opt)
     else:
-        opt.continue_epoch = opt.which_epoch
+        opt.continue_epoch = which_epoch
     if train:
         save_options(opt, parser)
     return opt
@@ -30,24 +31,24 @@ def get_arguments():
 
     # basics:
     # Tim.Zhang
-    parser.add_argument('--exp_name', help='experiment name for trained folder', default="mvtec_debug")
+    parser.add_argument('--exp_name', help='experiment name for trained folder', default="mvtec_grid_debug")
     parser.add_argument('--cpu',      action='store_true', help='run on cpu')
     parser.add_argument('--dataroot', help='location of datasets', default='datasets/')
     parser.add_argument('--checkpoints_dir', help='location of experiments', default='checkpoints/')
     parser.add_argument('--device_ids', type=int, default=0, help='gpu ids: e.g. 0 0 1 2 2 2 3 3 3 [default: 0]')
     
     # Tim.Zhang
-    parser.add_argument('--dataset_name', help='dataset name', default='mvtec')     
+    parser.add_argument('--dataset_name', help='dataset name', default='grid')     
     
     # Tim.Zhang
     parser.add_argument('--num_epochs', type=int, default=100000, help='number of epochs')
     
     # Tim.Zhang
-    parser.add_argument('--max_size',   type=int, default=330, help='limit image size in max dimension')
+    parser.add_argument('--max_size',   type=int, default=224, help='limit image size in max dimension')
     
-    parser.add_argument('--continue_train', type=int,  default=0, help='continue training of a previous checkpoint?')
-    parser.add_argument('--which_epoch',    type=int,  help='which epoch to use for evaluation')
-    parser.add_argument('--num_generated',  type=int,  default=100, help='which epoch to use for evaluation')
+    parser.add_argument('--continue_train', type=int,  default=0,      help='continue training of a previous checkpoint?')
+    parser.add_argument('--which_epoch',    type=int,  default=100000, help='which epoch to use for evaluation')
+    parser.add_argument('--num_generated',  type=int,  default=100,    help='how many images to generate for evaluation')
 
     # regime
     parser.add_argument('--use_masks',       type=int, default=1, help='use the regime without segmentation masks')

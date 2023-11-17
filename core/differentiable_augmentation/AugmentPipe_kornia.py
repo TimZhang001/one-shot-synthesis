@@ -32,18 +32,18 @@ class AugmentPipe_kornia(torch.nn.Module):
                         x[i] = torch.cat((x[i], mask[i].unsqueeze(0).repeat(1, 4-ch, 1, 1)[:, :3, :, :]), dim=(0))
                     
                         
-        # 1. 先放大2倍，然后再Crop到原来的尺寸 Tim.Zhang add 2023.11.12
+        # 1. 先放大1.5倍，然后再Crop到原来的尺寸 Tim.Zhang add 2023.11.12
         if random.random() < self.prob/2:
             tr = kornia.augmentation.RandomCrop(size=(sh[2], sh[3]), same_on_batch=True)
             for i in range(sh[0]):
-                x[i] = torch.nn.functional.interpolate(x[i], size=(2*sh[2], 2*sh[3]), mode="bilinear")
+                x[i] = torch.nn.functional.interpolate(x[i], size=(int(1.5*sh[2]), int(1.5*sh[3])), mode="bilinear")
                 x[i] = tr(x[i])
 
         if random.random() < self.prob:
             
-            # 2. Crop到一个小一点的尺寸(0.75, 1)，然后再resize回来
+            # 2. Crop到一个小一点的尺寸(0.85, 1)，然后再resize回来
             if random.random() < 0.5:
-                r = random.random() * 0.25 + 0.75
+                r = random.random() * 0.15 + 0.85
                 tr = kornia.augmentation.RandomCrop(size=(int(sh[2]*r), int(sh[3]*r)), same_on_batch=True)
                 for i in range(sh[0]):
                     x[i] = tr(x[i])
@@ -53,7 +53,7 @@ class AugmentPipe_kornia(torch.nn.Module):
                 tr = kornia.augmentation.RandomRotation(degrees=8, same_on_batch=True)
                 for i in range(sh[0]):
                     x[i] = tr(x[i])
-                tr = kornia.augmentation.CenterCrop(size=(sh[2]*0.80, sh[3]*0.80))
+                tr = kornia.augmentation.CenterCrop(size=(int(sh[2]*0.80), int(sh[3]*0.80)))
                 for i in range(sh[0]):
                     x[i] = tr(x[i])
                     x[i] = torch.nn.functional.interpolate(x[i], size=(sh[2], sh[3]), mode="bilinear")

@@ -78,7 +78,7 @@ class AugmentPipe_kornia_New(torch.nn.Module):
         
         # 7. 透视变换
         if random.random() < self.prob:
-            tr = kornia.augmentation.RandomPerspective(p=1.0, distortion_scale= 0.1, same_on_batch=True)
+            tr = kornia.augmentation.RandomPerspective(p=1.0, distortion_scale= 0.2, same_on_batch=True)
             for i in range(sh[0]):
                 x[i] = tr(x[i])
 

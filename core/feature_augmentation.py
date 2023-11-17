@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 import random
+import matplotlib.pyplot as plt
+import numpy as np
+import cv2
 
 # 进行特征维度的数据增强，进行不同的样本通道维度的交换，或者针对某个样本进行通道维度的置零
 class Content_FA(nn.Module):
@@ -28,7 +31,22 @@ class Content_FA(nn.Module):
                 
                 # 两个样本在通道维度上交换
                 ans[i,     ch_first, :, :] = y[i + 1, ch_first, :, :].clone()
-                ans[i + 1, ch_first, :, :] = y[i, ch_first, :, :].clone()
+                ans[i + 1, ch_first, :, :] = y[i,     ch_first, :, :].clone()
+
+                # debug ----------------- 
+                # 对交换前的y[i] y[i+1]进行可视化 对交换后的ans[i] ans[i+1]进行可视化
+                if 0:
+                    src_feature  = y[i:i+2].detach().cpu().numpy().squeeze()
+                    dst_feature  = ans[i:i+2].detach().cpu().numpy().squeeze()
+                    zero_feature = np.zeros_like(src_feature)
+                    show_feature = np.concatenate([src_feature, zero_feature, dst_feature], axis=0)
+                    plt.figure(figsize=(10, 2), dpi=200)
+                    plt.imshow(show_feature)
+                    plt.axis("off")
+                    plt.show()
+                    plt.savefig("Content_mix_test_{}.png".format(i))
+                    plt.close()
+                # debug -----------------
         return ans
 
     def drop(self, y):
@@ -43,10 +61,24 @@ class Content_FA(nn.Module):
             perm       = torch.randperm(ch)
             ch_second  = perm[num_first:num_first + num_second]
             ans[:, ch_second, :, :] = 0
+
+            # debug ----------------- 
+            if 0:
+                src_feature  = y.detach().cpu().numpy().squeeze()
+                dst_feature  = ans.detach().cpu().numpy().squeeze()
+                zero_feature = np.zeros_like(src_feature)
+                show_feature = np.concatenate([src_feature, zero_feature, dst_feature], axis=0)
+                plt.figure(figsize=(10, 2), dpi=200)
+                plt.imshow(show_feature)
+                plt.axis("off")
+                plt.show()
+                plt.savefig("Content_drop_test.png")
+                plt.close()
+            # debug -----------------
         return ans
 
     def forward(self, y):
-        ans = y
+        ans   = y
 
         # --- Apply only on background if masks are given --- #
         if self.use_masks: 
@@ -60,6 +92,7 @@ class Content_FA(nn.Module):
             ans[:ans.shape[0]//self.num_mask_channels] = y
         else:
             ans = y
+
         return ans
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -119,6 +152,29 @@ class Layout_FA(nn.Module):
                     x1_1, x1_2, y1_1, y1_2 = rect2
                     y[i,    :, x0_1:x0_2, y0_1:y0_2] = y[i,    :, x1_1:x1_2, y1_1:y1_2].clone()
                     mask[i, :, x0_1:x0_2, y0_1:y0_2] = mask[i, :, x1_1:x1_2, y1_1:y1_2].clone()
+
+                    # debug ----------------- 
+                    if 0:
+                        src_feature  = y[i].detach().cpu().numpy().squeeze()
+                        src_feature  = np.mean(src_feature, axis=0)
+                        # 绘制 rect1 rect2
+                        cv2.rectangle(src_feature, (y0_1, x0_1), (y0_2, x0_2), (0, 255, 0), 1)
+                        cv2.rectangle(src_feature, (y1_1, x1_1), (y1_2, x1_2), (0, 128, 0), 1)
+                        mask_feature = mask[i].detach().cpu().numpy().squeeze()
+                        mask_feature = np.transpose(mask_feature, (1, 2, 0))
+                        plt.figure(figsize=(6, 2), dpi=200)
+                        plt.subplot(1, 2, 1)
+                        plt.imshow(src_feature)
+                        plt.axis("off")
+                        plt.subplot(1, 2, 2)
+                        plt.imshow(mask_feature)
+                        plt.axis("off")
+                        plt.show()
+                        plt.savefig("Layout_mix_background_{}.png".format(i))
+                        plt.close()
+                    # debug -----------------
+
+
         return y, mask
 
     def swap(self, y, mask_):
@@ -140,6 +196,39 @@ class Layout_FA(nn.Module):
                         mem                          = mask_[i,     :, x1:x2, y1:y2].clone()
                         mask[i,     :, x1:x2, y1:y2] = mask_[i + 1, :, x1:x2, y1:y2].clone()
                         mask[i + 1, :, x1:x2, y1:y2] = mem
+
+                        # debug ----------------- 
+                        if 0:
+                            src_feature  = y[i].detach().cpu().numpy().squeeze()
+                            src_feature  = np.mean(src_feature, axis=0)
+                            cv2.rectangle(src_feature, (y1, x1), (y2, x2), (0, 255, 0), 1)
+                            dst_feature  = y[i+1].detach().cpu().numpy().squeeze()
+                            dst_feature  = np.mean(dst_feature, axis=0)
+                            cv2.rectangle(dst_feature, (y1, x1), (y2, x2), (0, 128, 0), 1)
+
+                            mask_feature1 = mask[i].detach().cpu().numpy().squeeze()
+                            mask_feature1 = np.transpose(mask_feature1, (1, 2, 0))
+
+                            mask_feature2 = mask[i+1].detach().cpu().numpy().squeeze()
+                            mask_feature2 = np.transpose(mask_feature2, (1, 2, 0))
+                            
+                            plt.figure(figsize=(10, 2), dpi=200)
+                            plt.subplot(1, 4, 1)
+                            plt.imshow(src_feature)
+                            plt.axis("off")
+                            plt.subplot(1, 4, 2)
+                            plt.imshow(dst_feature)
+                            plt.axis("off")
+                            plt.subplot(1, 4, 3)
+                            plt.imshow(mask_feature1)
+                            plt.axis("off")
+                            plt.subplot(1, 4, 4)
+                            plt.imshow(mask_feature2)
+                            plt.axis("off")
+                            plt.show()
+                            plt.savefig("Layout_swap_{}.png".format(i))
+                            plt.close()
+                        # debug -----------------
                         break
             if random.random() < self.prob:
                 which_object = torch.randint(mask.shape[1] - 1, size=()) + 1
@@ -171,7 +260,7 @@ class Layout_FA(nn.Module):
 # 生成矩形框
 def gen_rectangle(ans, w=-1, h=-1):
     x_c, y_c = random.random(), random.random()
-    x_s, y_s = random.random()*0.4+0.1, random.random()*0.4+0.1
+    x_s, y_s = random.random()*0.2+0.1, random.random()*0.2+0.1
     x_l, x_r = x_c-x_s/2, x_c+x_s/2
     y_l, y_r = y_c-y_s/2, y_c+y_s/2
     x1,  x2  = int(x_l*ans.shape[2]), int(x_r*ans.shape[2])

@@ -46,6 +46,8 @@ def LPIPS(list_fake_image):
         for j in range(i + 1, len(lst_im))[:100]:
             dist_diversity += p_model.forward(lst_im[i], lst_im[j])
             count += 1
+            if count % 500 == 0:
+                print(count)
     return dist_diversity/count
 
 
@@ -54,7 +56,7 @@ def LPIPS_to_train(list_real_image, list_fake_image, names_fake_image):
     For each fake image find the LPIPS to the closest training image
     """
     dist_to_real_dict = dict()
-    ans1 = 0
+    ans1  = 0
     count = 0
     lst_real, list_fake = list(), list()
     # --- unpack images --- #
@@ -65,15 +67,18 @@ def LPIPS_to_train(list_real_image, list_fake_image, names_fake_image):
     # --- compute average minimum LPIPS from a fake image to real images --- #
     for i in range(len(list_fake)):
         tens_im1 = list_fake[i]
-        cur_ans = list()
+        cur_ans  = list()
         for j in range(len(lst_real)):
-            tens_im2 = lst_real[j]
+            tens_im2     = lst_real[j]
             dist_to_real = p_model.forward(tens_im1, tens_im2)
             cur_ans.append(dist_to_real)
         cur_min = torch.min(torch.Tensor(cur_ans))
         dist_to_real_dict[names_fake_image[i]] = float(cur_min.detach().cpu().item())
         ans1 += cur_min
         count += 1
+
+        if count % 500 == 0:
+            print(count)
     ans = ans1 / count
     return ans, dist_to_real_dict
 

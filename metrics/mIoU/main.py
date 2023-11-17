@@ -24,7 +24,7 @@ def calc_loss(pred, target, metrics, bce_weight=0.5):
 
     loss = bce * bce_weight + dice * (1 - bce_weight)
 
-    metrics['bce'] += bce.data.cpu().numpy() * target.size(0)
+    metrics['bce']  += bce.data.cpu().numpy() * target.size(0)
     metrics['dice'] += dice.data.cpu().numpy() * target.size(0)
     metrics['loss'] += loss.data.cpu().numpy() * target.size(0)
     return loss
@@ -83,19 +83,19 @@ def train_model(model, optimizer, scheduler, dataloader_train, num_epochs=500):
 def compute_miou(path_real_images, names_real_image, path_real_masks, names_real_masks,
                                         exp_folder, names_fake_image, names_fake_masks, im_res):
     train_set = SimDataset(path_real_images, names_real_image, path_real_masks, names_real_masks, im_res, real=True)
-    num_ch = train_set.num_mask_channels
-    val_set = SimDataset(exp_folder, names_fake_image, exp_folder, names_fake_masks, im_res, real=False, num_ch=num_ch)
+    num_ch    = train_set.num_mask_channels
+    val_set   = SimDataset(exp_folder, names_fake_image, exp_folder, names_fake_masks, im_res, real=False, num_ch=num_ch)
     image_datasets = {'train': train_set, 'val': val_set}
     batch_size = 5
     dataloaders = {
         'train': DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=0),
-        'val': DataLoader(val_set, batch_size=batch_size, shuffle=False, num_workers=0)
+        'val':   DataLoader(val_set,   batch_size=batch_size, shuffle=True, num_workers=0)
     }
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = ResNetUNet(n_class=num_ch)
-    model = model.to(device)
-    optimizer_ft = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
+    model  = ResNetUNet(n_class=num_ch)
+    model  = model.to(device)
+    optimizer_ft     = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=1000, gamma=1.0)
 
     model = train_model(model, optimizer_ft, exp_lr_scheduler, dataloaders["val"], 500)
@@ -103,35 +103,36 @@ def compute_miou(path_real_images, names_real_image, path_real_masks, names_real
     model.eval()   # Set model to the evaluation mode
     all_corr, sum_corr, cur_iou, countt = 0, 0, 0, 0
     for i, batch in enumerate(dataloaders["train"]):
-        if i > 100:
+        if i > 10:
             break
         inputs, labels = batch
         inputs = inputs.to(device)
         labels = labels.to(device)
+        
         # Predict
         pred = model(inputs)
+        
         # The loss functions include the sigmoid function.
-        pred = F.sigmoid(pred)
-        pred = pred.data
-        pred1 = torch.argmax(pred, dim=1)
+        pred  = F.sigmoid(pred)
+        pred  = pred.data
+        pred1 = torch.argmax(pred,   dim=1)
         pred2 = torch.argmax(labels, dim=1)
         correct = ((pred1 == pred2)*1).sum()
         sum_corr += correct
         all_corr += torch.numel(pred1)
-        cur_iou += iou_pytorch(pred1, pred2).mean()
-        countt += 1
-    metrics_tensor = np.array([-1.0, -1.0, -1.0, -1.0])
+        cur_iou  += iou_pytorch(pred1, pred2).mean()
+        countt   += 1
+    metrics_tensor    = np.array([-1.0, -1.0, -1.0, -1.0])
     metrics_tensor[0] = sum_corr / all_corr
-    metrics_tensor[1] = cur_iou / countt
+    metrics_tensor[1] = cur_iou  / countt
 
     # HERE TRAINING on real
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model1 = ResNetUNet(n_class=num_ch)
     model1 = model1.to(device)
     model1.train()
 
-    optimizer_ft = optim.Adam(filter(lambda p: p.requires_grad, model1.parameters()), lr=1e-4)
+    optimizer_ft     = optim.Adam(filter(lambda p: p.requires_grad, model1.parameters()), lr=1e-4)
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=1000, gamma=1.0)
 
     model1 = train_model(model1, optimizer_ft, exp_lr_scheduler, dataloaders["train"], 500)
@@ -163,8 +164,7 @@ def compute_miou(path_real_images, names_real_image, path_real_masks, names_real
     metrics_tensor[3] = cur_iou / countt
 
     #### metric per image below:
-
-    val_per_fr_set = SimDataset(exp_folder, names_fake_image, exp_folder, names_fake_masks, im_res, real=False, num_ch=num_ch, no_transform=True)
+    val_per_fr_set       = SimDataset(exp_folder, names_fake_image, exp_folder, names_fake_masks, im_res, real=False, num_ch=num_ch, no_transform=True)
     dataloader_per_frame = DataLoader(val_per_fr_set, batch_size=1, shuffle=False, num_workers=0)
 
     results = dict()
