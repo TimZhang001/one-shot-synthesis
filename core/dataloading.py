@@ -35,9 +35,10 @@ class Dataset(torch.utils.data.Dataset):
         """
         self.device = opt.device
         # --- images --- #
-        self.root_images = os.path.join(opt.dataroot, opt.dataset_name, "image")
-        self.root_masks  = os.path.join(opt.dataroot, opt.dataset_name, "mask")
-        self.list_imgs   = self.get_frames_list(self.root_images)
+        self.root_images   = os.path.join(opt.dataroot, opt.dataset_name, "image")
+        self.root_masks    = os.path.join(opt.dataroot, opt.dataset_name, "mask")
+        self.list_imgs     = self.get_frames_list(self.root_images)
+        self.use_read_augm = opt.use_read_augm
         assert len(self.list_imgs) > 0, "Found no images"
         self.image_resolution, self.recommended_config = get_recommended_config(self.get_im_resolution(opt.max_size))
 
@@ -62,38 +63,6 @@ class Dataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return 100000000  # so first epoch finishes only with break
-    
-    # 根据image对应的mask，将缺陷区域copy到Object区域
-    # mask最多只有3个值，0，1，2 或者 0，1，如果是0，1，2，那么0是背景，1是object，2是Object上的缺陷，如果是0，1，那么0是背景，1是缺陷
-    def copy_paste_defect(self, img, mask):
-        # 判断mask包含几个值
-        assert len(mask.unique()) == 2 or  len(mask.unique()) == 3, "mask must have 2 or 3 unique values"
-        
-        if len(mask.unique()) == 2:
-            # 找到mask==1的区域，得到对应的Rect
-            # 进行图像的二值化操作
-            mask_bw = np.where(mask >= 1, 255, 0).astype(np.uint8)
-
-            # 统计连通域
-            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_bw, connectivity=8)
-            
-            # 计算连通域对应的外接矩形
-            rects = []
-            for i in range(1, num_labels):
-                rects.append(cv2.boundingRect(labels == i))
-            
-            # img和mask
-            sub_images = img(rects)
-            sub_masks  = mask(rects)
-
-            # 将sub_images中的缺陷区域copy到img中
-
-
-
-            pass
-        else:
-            pass
-
     
     def get_augmentations(self, target_size):
 
@@ -214,30 +183,24 @@ class Dataset(torch.utils.data.Dataset):
             mask_pil = Image.open(os.path.join(self.root_masks, self.list_imgs[idx][:-4] + ".png"))
         
         # --- augmentations --- #
-        if 1:
+        if self.use_read_augm:
             self.get_augmentations(target_size= target_size)
             if self.use_masks:
-                # 转化为float32
-                #img_pil     = img_pil.astype(np.float32)
-                #mask_pil    = mask_pil.astype(np.float32)
                 img_augment = self.augment_fun(image = np.array(img_pil), mask = np.array(mask_pil))
                 img_pil     = Image.fromarray(img_augment["image"])
                 mask_pil    = Image.fromarray(img_augment["mask"])
             else:
-                #img_pil     = img_pil.astype(np.float32)
                 img_augment = self.augment_fun(image = np.array(img_pil))
                 img_pil     = Image.fromarray(img_augment["image"])
             
 
         # --- image ---#
-        #img_pil = Image.open(os.path.join(self.root_images, self.list_imgs[idx])).convert("RGB")
         img     = F.to_tensor(F.resize(img_pil, size=target_size))
         img     = (img - 0.5) * 2
         output["images"] = img
 
         # --- mask ---#
         if self.use_masks:
-            #mask_pil = Image.open(os.path.join(self.root_masks, self.list_imgs[idx][:-4] + ".png"))
             mask     = F.to_tensor(F.resize(mask_pil, size=target_size, interpolation=Image.NEAREST))
             mask     = self.create_mask_channels(mask)  # mask should be N+1 channels
             output["masks"] = mask

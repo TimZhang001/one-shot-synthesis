@@ -245,7 +245,10 @@ class Discriminator(nn.Module):
             if i > 0:
                 y = torch.cat((y, self.rgb_to_features[i](images[-i - 1])), dim=1)
             y = self.body_ll[i](y)
-            output_ll.append(self.final_ll[i](y))
+            
+            # Tim.Zhang 只考虑1/8下的结果 提高样本的多样性
+            if i > 1:
+                output_ll.append(self.final_ll[i](y))
 
         # --------- D content --------- #
         y_con = y
@@ -258,6 +261,8 @@ class Discriminator(nn.Module):
         for i in range(self.num_blocks_ll, self.num_blocks):
             k     = i - self.num_blocks_ll
             y_con = self.body_content[k](y_con)
+
+            # Tim.Zhang 考虑1/16 1/32 1/64 1/128下的结果 提高样本的多样性
             output_content.append(self.final_content[k](y_con))
 
         # --------- D layout --------- #
@@ -267,6 +272,8 @@ class Discriminator(nn.Module):
         for i in range(self.num_blocks_ll, self.num_blocks):
             k     = i - self.num_blocks_ll
             y_lay = self.body_layout[k](y_lay)
+            
+            # Tim.Zhang 考虑1/16 1/32 和 1/64 1/128下的结果 提高样本的多样性
             output_layout.append(self.final_layout[k](y_lay))
 
         return {"low-level": output_ll, "content": output_content, "layout": output_layout}

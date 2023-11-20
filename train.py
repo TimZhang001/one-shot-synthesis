@@ -7,7 +7,7 @@ import torch
 
 # --- read options --- #
 opt      = config.read_arguments(train=True)
-use_aug1 = 0
+use_aug1 = 1
 
 # --- create dataloader and recommended model config --- #
 dataloader, model_config = dataloading.prepare_dataloading(opt)
@@ -70,7 +70,8 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
     loss_item["G"]      = loss_item_G
     loss_item["Dreal"]  = loss_item_Dreal
     loss_item["Dfake"]  = loss_item_Dfake
-    visualizer.track_losses_logits(logits, losses, loss_item)
+    visualizer.track_losses_logits(logits, losses, loss_item, epoch)
+    
     if opt.use_EMA:
         netEMA = utils.update_EMA(netEMA, netG, opt.EMA_decay)
     if epoch % opt.freq_save_ckpt == 0 or epoch == opt.num_epochs:

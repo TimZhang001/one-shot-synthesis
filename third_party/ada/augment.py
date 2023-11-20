@@ -167,10 +167,10 @@ class AugmentPipe(torch.nn.Module):
         self.register_buffer('Hz_geom', upfirdn2d.setup_filter(wavelets['sym6']))
 
         # Construct filter bank for image-space filtering.
-        Hz_lo = np.asarray(wavelets['sym2'])            # H(z)
-        Hz_hi = Hz_lo * ((-1) ** np.arange(Hz_lo.size)) # H(-z)
-        Hz_lo2 = np.convolve(Hz_lo, Hz_lo[::-1]) / 2    # H(z) * H(z^-1) / 2
-        Hz_hi2 = np.convolve(Hz_hi, Hz_hi[::-1]) / 2    # H(-z) * H(-z^-1) / 2
+        Hz_lo    = np.asarray(wavelets['sym2'])            # H(z)
+        Hz_hi    = Hz_lo * ((-1) ** np.arange(Hz_lo.size)) # H(-z)
+        Hz_lo2   = np.convolve(Hz_lo, Hz_lo[::-1]) / 2    # H(z) * H(z^-1) / 2
+        Hz_hi2   = np.convolve(Hz_hi, Hz_hi[::-1]) / 2    # H(-z) * H(-z^-1) / 2
         Hz_fbank = np.eye(4, 1)                         # Bandpass(H(z), b_i)
         for i in range(1, Hz_fbank.shape[0]):
             Hz_fbank = np.dstack([Hz_fbank, np.zeros_like(Hz_fbank)]).reshape(Hz_fbank.shape[0], -1)[:, :-1]
@@ -190,7 +190,7 @@ class AugmentPipe(torch.nn.Module):
         # -------------------------------------
 
         # Initialize inverse homogeneous 2D transform: G_inv @ pixel_out ==> pixel_in
-        I_3 = torch.eye(3, device=device)
+        I_3   = torch.eye(3, device=device)
         G_inv = I_3
 
         # Apply x-flip with probability (xflip * strength).

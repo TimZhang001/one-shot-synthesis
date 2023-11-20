@@ -31,14 +31,14 @@ def get_arguments():
 
     # basics:
     # Tim.Zhang
-    parser.add_argument('--exp_name', help='experiment name for trained folder', default="mvtec_grid_debug")
+    parser.add_argument('--exp_name', help='experiment name for trained folder', default="mvtec_debug")
     parser.add_argument('--cpu',      action='store_true', help='run on cpu')
     parser.add_argument('--dataroot', help='location of datasets', default='datasets/')
     parser.add_argument('--checkpoints_dir', help='location of experiments', default='checkpoints/')
     parser.add_argument('--device_ids', type=int, default=0, help='gpu ids: e.g. 0 0 1 2 2 2 3 3 3 [default: 0]')
     
     # Tim.Zhang
-    parser.add_argument('--dataset_name', help='dataset name', default='grid')     
+    parser.add_argument('--dataset_name', help='dataset name', default='hazelnut')     
     
     # Tim.Zhang
     parser.add_argument('--num_epochs', type=int, default=100000, help='number of epochs')
@@ -47,12 +47,13 @@ def get_arguments():
     parser.add_argument('--max_size',   type=int, default=224, help='limit image size in max dimension')
     
     parser.add_argument('--continue_train', type=int,  default=0,      help='continue training of a previous checkpoint?')
-    parser.add_argument('--which_epoch',    type=int,  default=100000, help='which epoch to use for evaluation')
+    parser.add_argument('--which_epoch',    type=int,  default=0,      help='which epoch to use for evaluation')
     parser.add_argument('--num_generated',  type=int,  default=100,    help='how many images to generate for evaluation')
 
     # regime
     parser.add_argument('--use_masks',       type=int, default=1, help='use the regime without segmentation masks')
     parser.add_argument('--use_kornia_augm', type=int, default=1, help='use an older version of differentiable augm')
+    parser.add_argument('--use_read_augm',   type=int, default=0, help='use augm for reading images')
 
     # training:
     parser.add_argument('--batch_size',  type=int,   default=5,      help='batch_size')

@@ -1,10 +1,14 @@
+'''
+* 当前版本: 1.0.0
+* 作    者: 张胜森
+* 日    期: 2023.11.17
+* 备    注: 1.在Cutpaste的基础上使用了泊松融合提高生成样本的真实性
+'''
+
 import numpy as np
-import scipy.signal
 import torch
-import albumentations as Augment
 import numpy as np
 import cv2
-import sys
 from skimage.morphology import disk
 from skimage.filters import median
 
@@ -48,31 +52,32 @@ def patch_ex(ima_dest, ima_src=None, same=False, num_patches=1,
 
     if cutpaste_patch_generation:
         width_bounds_pct = None 
-        resize = False 
-        skip_background = None
-        min_overlap_pct = None 
-        min_object_pct = None
-        gamma_params = None
-        num_patches = 1
+        resize           = False 
+        skip_background  = None
+        min_overlap_pct  = None 
+        min_object_pct   = None
+        gamma_params     = None
+        num_patches      = 1
 
     ima_src = ima_dest.copy() if same or (ima_src is None) else ima_src
 
     if skip_background is not None and not cutpaste_patch_generation:
         if isinstance(skip_background, tuple):
             skip_background = [skip_background]
-        src_object_mask = np.ones_like(ima_src[...,0:1])
+        src_object_mask  = np.ones_like(ima_src[...,0:1])
         dest_object_mask = np.ones_like(ima_dest[...,0:1])
+        
         for background, threshold in skip_background:
-            src_object_mask &= np.uint8(np.abs(ima_src.mean(axis=-1, keepdims=True) - background) > threshold)
+            src_object_mask  &= np.uint8(np.abs(ima_src.mean(axis=-1, keepdims=True) - background) > threshold)
             dest_object_mask &= np.uint8(np.abs(ima_dest.mean(axis=-1, keepdims=True) - background) > threshold)
-        src_object_mask[...,0] = cv2.medianBlur(src_object_mask[...,0], 7)  # remove grain from threshold choice
+        src_object_mask[...,0]  = cv2.medianBlur(src_object_mask[...,0], 7)  # remove grain from threshold choice
         dest_object_mask[...,0] = cv2.medianBlur(dest_object_mask[...,0], 7)  # remove grain from threshold choice
     else:
         src_object_mask = None
         dest_object_mask = None
     
     # add patches
-    mask = np.zeros_like(ima_dest[..., 0:1])  # single channel
+    mask    = np.zeros_like(ima_dest[..., 0:1])  # single channel
     patchex = ima_dest.copy()
     coor_min_dim1, coor_max_dim1, coor_min_dim2, coor_max_dim2 = mask.shape[0] - 1, 0, mask.shape[1] - 1, 0 
     if label_mode == 'continuous':
@@ -84,6 +89,7 @@ def patch_ex(ima_dest, ima_src=None, same=False, num_patches=1,
             patchex, ((_coor_min_dim1, _coor_max_dim1), (_coor_min_dim2, _coor_max_dim2)), patch_mask = _patch_ex(
                 patchex, ima_src, dest_object_mask, src_object_mask, mode, label_mode, shift, resize, width_bounds_pct, 
                 gamma_params, min_object_pct, min_overlap_pct, factor, resize_bounds, num_ellipses, verbose, cutpaste_patch_generation)
+            
             if patch_mask is not None:
                 mask[_coor_min_dim1:_coor_max_dim1,_coor_min_dim2:_coor_max_dim2] = patch_mask
                 coor_min_dim1 = min(coor_min_dim1, _coor_min_dim1) 
@@ -92,7 +98,7 @@ def patch_ex(ima_dest, ima_src=None, same=False, num_patches=1,
                 coor_max_dim2 = max(coor_max_dim2, _coor_max_dim2)
 
     # create label
-    label_mask = np.uint8(np.mean(np.abs(1.0 * mask*ima_dest - 1.0 * mask*patchex), axis=-1, keepdims=True) > tol)
+    label_mask        = np.uint8(np.mean(np.abs(1.0 * mask*ima_dest - 1.0 * mask*patchex), axis=-1, keepdims=True) > tol)
     label_mask[...,0] = cv2.medianBlur(label_mask[...,0], 5)  # remove grain from threshold choice
 
     if label_mode == 'continuous':
@@ -115,12 +121,13 @@ def _patch_ex(ima_dest, ima_src, dest_object_mask, src_object_mask, mode, label_
               gamma_params, min_object_pct, min_overlap_pct, factor, resize_bounds, num_ellipses, verbose, cutpaste_patch_generation):
     if cutpaste_patch_generation:
         skip_background = False
-        dims = np.array(ima_dest.shape)
+        dims            = np.array(ima_dest.shape)
         if dims[0] != dims[1]:
             raise ValueError("CutPaste patch generation only works for square images")
         # 1. sampling the area ratio between the patch and the full image from (0.02, 0.15)
         # (divide by 4 as patch-widths below are actually half-widths)
         area_ratio = np.random.uniform(0.02, 0.15) / 4.0
+        
         #  2. determine the aspect ratio by sampling from (0.3, 1) union (1, 3.3)
         if np.random.randint(2) > 0:
             aspect_ratio = np.random.uniform(0.3, 1)
@@ -129,6 +136,7 @@ def _patch_ex(ima_dest, ima_src, dest_object_mask, src_object_mask, mode, label_
         
         patch_width_dim1 = int(np.rint(np.clip(np.sqrt(area_ratio * aspect_ratio * dims[0]**2), 0, dims[0])))
         patch_width_dim2 = int(np.rint(np.clip(area_ratio * dims[0]**2 / patch_width_dim1, 0, dims[1])))
+        
         #  3. sample location such that patch is contained entirely within the image
         center_dim1 = np.random.randint(patch_width_dim1, dims[0] - patch_width_dim1)
         center_dim2 = np.random.randint(patch_width_dim2, dims[1] - patch_width_dim2)
@@ -156,7 +164,7 @@ def _patch_ex(ima_dest, ima_src, dest_object_mask, src_object_mask, mode, label_
             patch_width_dim2 = np.random.randint(min_width_dim2, max_width_dim2)
 
         found_patch = False
-        attempts = 0
+        attempts    = 0
         while not found_patch:
             center_dim1 = np.random.randint(min_width_dim1, dims[0]-min_width_dim1)
             center_dim2 = np.random.randint(min_width_dim2, dims[1]-min_width_dim2)
@@ -205,9 +213,9 @@ def _patch_ex(ima_dest, ima_src, dest_object_mask, src_object_mask, mode, label_
     height, width, _ = src.shape
     if resize:
         lb, ub = resize_bounds
-        scale = np.clip(np.random.normal(1, 0.5), lb, ub)
+        scale      = np.clip(np.random.normal(1, 0.5), lb, ub)
         new_height = np.clip(scale * height, min_width_dim1, max_width_dim1)
-        new_width = np.clip(int(new_height / height * width), min_width_dim2, max_width_dim2)
+        new_width  = np.clip(int(new_height / height * width), min_width_dim2, max_width_dim2)
         new_height = np.clip(int(new_width / width * height), min_width_dim1, max_width_dim1)  # in case there was clipping
         if src.shape[2] == 1:  # grayscale
             src = cv2.resize(src[..., 0], (new_width, new_height))
@@ -289,10 +297,6 @@ def _patch_ex(ima_dest, ima_src, dest_object_mask, src_object_mask, mode, label_
     return patchex, ((coor_min_dim1, coor_max_dim1), (coor_min_dim2, coor_max_dim2)), patch_mask
 
 
-class TimAugmentPipe(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.get_augmentations()
     
 
 

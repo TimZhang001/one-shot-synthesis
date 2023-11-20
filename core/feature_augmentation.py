@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 
+from third_party.tim.cutpaste import CutPasteTensor
+
 # 进行特征维度的数据增强，进行不同的样本通道维度的交换，或者针对某个样本进行通道维度的置零
 class Content_FA(nn.Module):
     def __init__(self, use_masks, prob_FA_con, num_mask_channels=None):
@@ -104,13 +106,15 @@ class Layout_FA(nn.Module):
         self.use_masks = use_masks
         self.prob      = prob
         self.ranges    = (0.10, 0.30)
+        self.cutpaste  = CutPasteTensor()
 
     def forward(self, y, masks):
         if self.use_masks:
             mask_FA = torch.nn.functional.interpolate(masks, size=(y.shape[2], y.shape[3]), mode="nearest")
             ans     = self.func_with_mask(y, mask_FA)
         else:
-            ans     = self.func_without_mask(y)
+            ans = self.func_without_mask(y)
+            ans = self.func_without_mask_cut_paste(ans)
         return ans
 
     # 随机生成一个矩形，进行两个样本在特征图上的交换
@@ -125,6 +129,15 @@ class Layout_FA(nn.Module):
                 x1, x2, y1, y2 = gen_rectangle(ans)
                 ans[i,     :, x1:x2, y1:y2] = y[i + 1, :, x1:x2, y1:y2].clone()
                 ans[i + 1, :, x1:x2, y1:y2] = y[i,     :, x1:x2, y1:y2].clone()
+        return ans
+    
+    def func_without_mask_cut_paste(self, y):
+        bs  = y.shape[0]
+        ans = y.clone()
+
+        for i in range(0, bs):
+            if random.random() < self.prob:
+                ans[i] = self.cutpaste(y[i])
         return ans
 
     def func_with_mask(self, y, mask):

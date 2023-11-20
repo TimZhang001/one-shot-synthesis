@@ -1,14 +1,17 @@
+'''
+* 当前版本: 1.0.0
+* 作    者: Tim.Zhang
+* 日    期: 2023.11.17
+* 备    注: 1.基本的基于cutpaste的数据增强,包括cutpaste_normal, cutpaste_scar, cutpaste_union, cutpaste_3way
+           2.暂时不支持基于Mask的CutPaste
+           3.暂时不支持对特征图像的CutPaste
+'''
+
 import random
 import math
 from torchvision import transforms
 import torch 
-
-def cut_paste_collate_fn(batch):
-    # cutPaste return 2 tuples of tuples we convert them into a list of tuples
-    img_types = list(zip(*batch))
-#     print(list(zip(*batch)))
-    return [torch.stack(imgs) for imgs in img_types]
-    
+from PIL import Image
 
 class CutPaste(object):
     """Base class for both cutpaste variants with common operations"""
@@ -19,9 +22,9 @@ class CutPaste(object):
             self.colorJitter = None
         else:
             self.colorJitter = transforms.ColorJitter(brightness = colorJitter,
-                                                      contrast = colorJitter,
+                                                      contrast   = colorJitter,
                                                       saturation = colorJitter,
-                                                      hue = colorJitter)
+                                                      hue        = colorJitter)
     def __call__(self, org_img, img):
         # apply transforms to both images
         if self.transform:
@@ -37,7 +40,7 @@ class CutPasteNormal(CutPaste):
     """
     def __init__(self, area_ratio=[0.02,0.15], aspect_ratio=0.3, **kwags):
         super(CutPasteNormal, self).__init__(**kwags)
-        self.area_ratio = area_ratio
+        self.area_ratio   = area_ratio
         self.aspect_ratio = aspect_ratio
 
     def __call__(self, img):
@@ -50,9 +53,7 @@ class CutPasteNormal(CutPaste):
         
         # sample in log space
         log_ratio = torch.log(torch.tensor((self.aspect_ratio, 1/self.aspect_ratio)))
-        aspect = torch.exp(
-            torch.empty(1).uniform_(log_ratio[0], log_ratio[1])
-        ).item()
+        aspect    = torch.exp(torch.empty(1).uniform_(log_ratio[0], log_ratio[1])).item()
         
         cut_w = int(round(math.sqrt(ratio_area * aspect)))
         cut_h = int(round(math.sqrt(ratio_area / aspect)))
@@ -61,7 +62,7 @@ class CutPasteNormal(CutPaste):
         from_location_h = int(random.uniform(0, h - cut_h))
         from_location_w = int(random.uniform(0, w - cut_w))
         
-        box = [from_location_w, from_location_h, from_location_w + cut_w, from_location_h + cut_h]
+        box   = [from_location_w, from_location_h, from_location_w + cut_w, from_location_h + cut_h]
         patch = img.crop(box)
         
         if self.colorJitter:
@@ -71,7 +72,7 @@ class CutPasteNormal(CutPaste):
         to_location_w = int(random.uniform(0, w - cut_w))
         
         insert_box = [to_location_w, to_location_h, to_location_w + cut_w, to_location_h + cut_h]
-        augmented = img.copy()
+        augmented  = img.copy()
         augmented.paste(patch, insert_box)
         
         return super().__call__(img, augmented)
@@ -125,7 +126,7 @@ class CutPasteScar(CutPaste):
 class CutPasteUnion(object):
     def __init__(self, **kwags):
         self.normal = CutPasteNormal(**kwags)
-        self.scar = CutPasteScar(**kwags)
+        self.scar   = CutPasteScar(**kwags)
     
     def __call__(self, img):
         r = random.uniform(0, 1)
@@ -144,4 +145,119 @@ class CutPaste3Way(object):
         _, cutpaste_scar     = self.scar(img)
         
         return org, cutpaste_normal, cutpaste_scar
+
+# ----- Tim.Zhang Add ----- #
+class CutPasteTensor(object):
+    """Randomly copy one patche from the tensor image and paste it somewere else.
+    Args:
+        area_ratio (list): list with 2 floats for maximum and minimum area to cut out
+        aspect_ratio (float): minimum area ration. Ration is sampled between aspect_ratio and 1/aspect_ratio.
+    """
+    def __init__(self, area_ratio=[0.05,0.20], aspect_ratio=0.3, **kwags):
+        super(CutPasteTensor, self).__init__(**kwags)
+        self.area_ratio   = area_ratio
+        self.aspect_ratio = aspect_ratio
+
+    def __call__(self, img_tensor, return_all=False):
+        #TODO: we might want to use the pytorch implementation to calculate the patches from https://pytorch.org/vision/stable/_modules/torchvision/transforms/transforms.html#RandomErasing
+        h = img_tensor.shape[1]
+        w = img_tensor.shape[2]
+        
+        # ratio between area_ratio[0] and area_ratio[1]
+        ratio_area = random.uniform(self.area_ratio[0], self.area_ratio[1]) * w * h
+        
+        # sample in log space
+        log_ratio = torch.log(torch.tensor((self.aspect_ratio, 1/self.aspect_ratio)))
+        aspect    = torch.exp(torch.empty(1).uniform_(log_ratio[0], log_ratio[1])).item()
+        
+        cut_w = int(round(math.sqrt(ratio_area * aspect)))
+        cut_h = int(round(math.sqrt(ratio_area / aspect)))
+        
+        # one might also want to sample from other images. currently we only sample from the image itself
+        from_location_h = int(random.uniform(0, h - cut_h))
+        from_location_w = int(random.uniform(0, w - cut_w))
+        
+        box   = [from_location_w, from_location_h, from_location_w + cut_w, from_location_h + cut_h]
+        patch = img_tensor[:, box[1]:box[3], box[0]:box[2]]
+        
+  
+        to_location_h = int(random.uniform(0, h - cut_h))
+        to_location_w = int(random.uniform(0, w - cut_w))
+        
+        insert_box = [to_location_w, to_location_h, to_location_w + cut_w, to_location_h + cut_h]
+        augmented  = img_tensor.clone()
+        augmented[:, insert_box[1]:insert_box[3], insert_box[0]:insert_box[2]] = patch
+        
+        if return_all:
+            return augmented, img_tensor
+        else:
+            return augmented
+
+class CutPasteMaskTensor(object):
+    """Randomly copy one patche from the image tensor and paste it somewere else.
+    Args:
+        area_ratio (list): list with 2 floats for maximum and minimum area to cut out
+        aspect_ratio (float): minimum area ration. Ration is sampled between aspect_ratio and 1/aspect_ratio.
+    """
+    def __init__(self, area_ratio=[0.5, 2.0], min_ratio=0.01):
+        super(CutPasteMaskTensor, self).__init__()
+        self.area_ratio = area_ratio
+        self.min_ratio  = min_ratio
+
+    def __call__(self, img_tensor, mask_tensor, return_all=False):
+        #TODO: we might want to use the pytorch implementation to calculate the patches from https://pytorch.org/vision/stable/_modules/torchvision/transforms/transforms.html#RandomErasing
+        h = img_tensor.shape[1]
+        w = img_tensor.shape[2]
+        
+        # ratio between area_ratio[0] and area_ratio[1]
+        ratio_area = random.uniform(self.area_ratio[0], self.area_ratio[1]) * w * h
+        
+        # sample in log space
+        log_ratio = torch.log(torch.tensor((self.aspect_ratio, 1/self.aspect_ratio)))
+        aspect    = torch.exp(torch.empty(1).uniform_(log_ratio[0], log_ratio[1])).item()
+        
+        cut_w = int(round(math.sqrt(ratio_area * aspect)))
+        cut_h = int(round(math.sqrt(ratio_area / aspect)))
+        
+        # one might also want to sample from other images. currently we only sample from the image itself
+        from_location_h = int(random.uniform(0, h - cut_h))
+        from_location_w = int(random.uniform(0, w - cut_w))
+        
+        box   = [from_location_w, from_location_h, from_location_w + cut_w, from_location_h + cut_h]
+        patch = img_tensor[:, box[1]:box[3], box[0]:box[2]]
+        
+  
+        to_location_h = int(random.uniform(0, h - cut_h))
+        to_location_w = int(random.uniform(0, w - cut_w))
+        
+        insert_box = [to_location_w, to_location_h, to_location_w + cut_w, to_location_h + cut_h]
+        augmented  = img_tensor.clone()
+        augmented[:, insert_box[1]:insert_box[3], insert_box[0]:insert_box[2]] = patch
+        
+        if return_all:
+            return augmented, img_tensor
+        else:
+            return augmented
+
+
+def test_function1():
+    CP_Augmenta = CutPasteNormal()
+    input_image = Image.open('/home/zhangss/PHDPaper/06_OneShotSynthesis1/datasets/grid/image/broken_003.png')
+    input_image = input_image.convert('RGB')
+
+    org, cutpaste_normal = CP_Augmenta(input_image)
+    org.save('/home/zhangss/PHDPaper/06_OneShotSynthesis1/datasets/grid/image/broken_003_org.png')
+    cutpaste_normal.save('/home/zhangss/PHDPaper/06_OneShotSynthesis1/datasets/grid/image/broken_003_cutpaste_normal.png')
+
+
+def test_function2():
+    CP_Augmenta  = CutPasteNormal()
+    input_tensor = torch.randn(256, 224, 224)
+
+    org, cutpaste_normal = CP_Augmenta(input_tensor)
+
+
+# main 测试程序
+if __name__ == '__main__':
+    test_function2()
 
