@@ -158,7 +158,7 @@ class CutPasteTensor(object):
         self.area_ratio   = area_ratio
         self.aspect_ratio = aspect_ratio
 
-    def __call__(self, img_tensor, return_all=False):
+    def __call__(self, img_tensor):
         #TODO: we might want to use the pytorch implementation to calculate the patches from https://pytorch.org/vision/stable/_modules/torchvision/transforms/transforms.html#RandomErasing
         h = img_tensor.shape[1]
         w = img_tensor.shape[2]
@@ -188,10 +188,8 @@ class CutPasteTensor(object):
         augmented  = img_tensor.clone()
         augmented[:, insert_box[1]:insert_box[3], insert_box[0]:insert_box[2]] = patch
         
-        if return_all:
-            return augmented, img_tensor
-        else:
-            return augmented
+
+        return augmented, box, insert_box
 
 class CutPasteMaskTensor(object):
     """Randomly copy one patche from the image tensor and paste it somewere else.

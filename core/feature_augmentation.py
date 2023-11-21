@@ -4,18 +4,22 @@ import random
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-
+import os
 from third_party.tim.cutpaste import CutPasteTensor
 
 # 进行特征维度的数据增强，进行不同的样本通道维度的交换，或者针对某个样本进行通道维度的置零
 class Content_FA(nn.Module):
-    def __init__(self, use_masks, prob_FA_con, num_mask_channels=None):
+    def __init__(self, use_masks, prob_FA_con, num_mask_channels=None, save_path=False):
         super(Content_FA, self).__init__()
         self.prob      = prob_FA_con
         self.ranges    = (0.10, 0.30)
         self.use_masks = use_masks
+        self.save_path = save_path
         if self.use_masks:
             self.num_mask_channels = num_mask_channels
+        
+        if self.save_path:
+            os.makedirs(self.save_path, exist_ok=True)
 
     def mix(self, y):
         """
@@ -26,6 +30,7 @@ class Content_FA(nn.Module):
         ans = y
         # ---  --- #
         if random.random() < self.prob:
+            do_mix = 1
             for i in range(0, bs - 1, 2):
                 num_first = int(ch * (torch.rand(1) * (self.ranges[1]-self.ranges[0]) + self.ranges[0]))
                 perm      = torch.randperm(ch)
@@ -34,22 +39,9 @@ class Content_FA(nn.Module):
                 # 两个样本在通道维度上交换
                 ans[i,     ch_first, :, :] = y[i + 1, ch_first, :, :].clone()
                 ans[i + 1, ch_first, :, :] = y[i,     ch_first, :, :].clone()
-
-                # debug ----------------- 
-                # 对交换前的y[i] y[i+1]进行可视化 对交换后的ans[i] ans[i+1]进行可视化
-                if 0:
-                    src_feature  = y[i:i+2].detach().cpu().numpy().squeeze()
-                    dst_feature  = ans[i:i+2].detach().cpu().numpy().squeeze()
-                    zero_feature = np.zeros_like(src_feature)
-                    show_feature = np.concatenate([src_feature, zero_feature, dst_feature], axis=0)
-                    plt.figure(figsize=(10, 2), dpi=200)
-                    plt.imshow(show_feature)
-                    plt.axis("off")
-                    plt.show()
-                    plt.savefig("Content_mix_test_{}.png".format(i))
-                    plt.close()
-                # debug -----------------
-        return ans
+        else:
+            do_mix = 0
+        return ans, do_mix
 
     def drop(self, y):
         """
@@ -58,36 +50,42 @@ class Content_FA(nn.Module):
         ch  = y.shape[1]
         ans = y
         if random.random() < self.prob:
+            do_drop    = 1
             num_first  = int(ch * (torch.rand(1) * (self.ranges[1]-self.ranges[0]) + self.ranges[0]))
             num_second = int(ch * (torch.rand(1) * (self.ranges[1]-self.ranges[0]) + self.ranges[0]))
             perm       = torch.randperm(ch)
             ch_second  = perm[num_first:num_first + num_second]
             ans[:, ch_second, :, :] = 0
+        else:
+            do_drop = 0
 
-            # debug ----------------- 
-            if 0:
-                src_feature  = y.detach().cpu().numpy().squeeze()
-                dst_feature  = ans.detach().cpu().numpy().squeeze()
-                zero_feature = np.zeros_like(src_feature)
-                show_feature = np.concatenate([src_feature, zero_feature, dst_feature], axis=0)
-                plt.figure(figsize=(10, 2), dpi=200)
-                plt.imshow(show_feature)
-                plt.axis("off")
-                plt.show()
-                plt.savefig("Content_drop_test.png")
-                plt.close()
-            # debug -----------------
-        return ans
+        return ans, do_drop
 
-    def forward(self, y):
-        ans   = y
+    def forward(self, y, epoch=0):
+        ans   = y.clone()
 
         # --- Apply only on background if masks are given --- #
         if self.use_masks: 
             y = ans[:ans.shape[0]//self.num_mask_channels]
         
-        y = self.mix(y)
-        y = self.drop(y)
+        y, do_mix  = self.mix(y)
+        y, do_drop = self.drop(y)
+
+        # --- Apply Debug Show the feature map
+        if epoch % 500 == 0:
+            src_feature  = ans.detach().cpu().numpy().squeeze()
+            dst_feature  = y.detach().cpu().numpy().squeeze()
+            zero_feature = np.zeros_like(src_feature)
+            show_feature = np.concatenate([src_feature, zero_feature, dst_feature], axis=0)
+            plt.figure(figsize=(8, 1), dpi=200)
+            plt.imshow(show_feature)
+            plt.axis("off")
+            plt.tight_layout()
+            plt.suptitle("Content_FA_Mix_" + str(do_mix) + "_Drop_" +  str(do_drop) + "_Epcho_" + str(epoch))
+            save_path = "Content_FA_Mix_" + str(do_mix) + "_Drop_" +  str(do_drop) + "_Epcho_" + str(epoch).zfill(8) + ".png"
+            save_path = os.path.join(self.save_path, save_path) if self.save_path else save_path
+            plt.savefig(save_path)
+            plt.close()
 
         # --- Apply only on background if masks are given --- #
         if self.use_masks:
@@ -101,163 +99,338 @@ class Content_FA(nn.Module):
 
 # 进行特征图的数据增强，
 class Layout_FA(nn.Module):
-    def __init__(self, use_masks, prob):
+    def __init__(self, use_masks, prob, save_path=None):
         super(Layout_FA, self).__init__()
         self.use_masks = use_masks
         self.prob      = prob
         self.ranges    = (0.10, 0.30)
         self.cutpaste  = CutPasteTensor()
+        self.save_path = save_path
 
-    def forward(self, y, masks):
+        if self.save_path:
+            os.makedirs(self.save_path, exist_ok=True)
+
+    def forward(self, y, masks, epoch=0):
         if self.use_masks:
             mask_FA = torch.nn.functional.interpolate(masks, size=(y.shape[2], y.shape[3]), mode="nearest")
-            ans     = self.func_with_mask(y, mask_FA)
+            ans     = self.func_with_mask(y, mask_FA, epoch)
         else:
-            ans = self.func_without_mask(y)
-            ans = self.func_without_mask_cut_paste(ans)
+            ans = self.func_without_mask(y, epoch)
+            ans = self.func_without_mask_cut_paste(ans, epoch)
         return ans
 
     # 随机生成一个矩形，进行两个样本在特征图上的交换
-    def func_without_mask(self, y):
+    def func_without_mask(self, y, epoch=0):
         """
         If a segmentation mask is not provided, copy-paste rectangles in a random way
         """
         bs  = y.shape[0]
         ans = y.clone()
+        rect_list = []
         for i in range(0, bs - 1, 2):
             if random.random() < self.prob:
                 x1, x2, y1, y2 = gen_rectangle(ans)
                 ans[i,     :, x1:x2, y1:y2] = y[i + 1, :, x1:x2, y1:y2].clone()
                 ans[i + 1, :, x1:x2, y1:y2] = y[i,     :, x1:x2, y1:y2].clone()
+                rect_list.append([x1, x2, y1, y2])
+            else:
+                rect_list.append(None)
+
+        # debug -----------------
+        if epoch % 500 == 0:
+            src_feature = y.detach().cpu().numpy().squeeze()
+            src_feature = np.mean(src_feature, axis=1)
+            dst_feature = ans.detach().cpu().numpy().squeeze()
+            dst_feature = np.mean(dst_feature, axis=1)
+            col_num     = dst_feature.shape[0]
+            
+            plt.figure(figsize=(10, 5), dpi=200)
+            for i in range(col_num):
+                plt.subplot(3, col_num, i+1)
+                plt.imshow(src_feature[i])
+                plt.axis("off")
+
+                plt.subplot(3, col_num, i+1+col_num)
+                plt.imshow(dst_feature[i])
+                plt.axis("off")
+
+            index = 0
+            for i in range(len(rect_list)):
+                if rect_list[i] is not None:
+                    x1, x2, y1, y2 = rect_list[i]
+                    show_image = np.zeros_like(src_feature[0], dtype=np.uint8)
+                    cv2.rectangle(show_image, (y1, x1), (y2, x2), (0, 255, 0), 1)          
+                    plt.subplot(3, col_num, index+1+col_num*2)
+                    plt.imshow(show_image)
+                    plt.axis("off")
+
+                    show_image = np.zeros_like(src_feature[0], dtype=np.uint8)
+                    cv2.rectangle(show_image, (y1, x1), (y2, x2), (0, 128, 0), 1)
+                    plt.subplot(3, col_num, index+2+col_num*2)
+                    plt.imshow(show_image)
+                    plt.axis("off")
+
+                    index += 2
+
+            plt.tight_layout()
+            plt.suptitle("Layout_FA_WOMask_Epcho_" + str(epoch))
+            save_path = "Layout_FA_WO_Mask_Epcho_" + str(epoch).zfill(8) + ".png"
+            save_path = os.path.join(self.save_path, save_path) if self.save_path else save_path
+            plt.savefig(save_path)
+            plt.close()
+
         return ans
     
-    def func_without_mask_cut_paste(self, y):
+    def func_without_mask_cut_paste(self, y, epoch=0):
         bs  = y.shape[0]
         ans = y.clone()
+        srcBoxList = []
+        dstBoxList = []
 
         for i in range(0, bs):
-            if random.random() < self.prob:
-                ans[i] = self.cutpaste(y[i])
+            if random.random() < self.prob or 1:
+                ans[i], srcBox, dstBox = self.cutpaste(y[i])
+                srcBoxList.append(srcBox)
+                dstBoxList.append(dstBox)
+            else:
+                srcBoxList.append(None)
+                dstBoxList.append(None)
+
+        # debug -----------------
+        if epoch % 500 == 0:
+            src_feature = y.detach().cpu().numpy().squeeze()
+            src_feature = np.mean(src_feature, axis=1)
+            dst_feature = ans.detach().cpu().numpy().squeeze()
+            dst_feature = np.mean(dst_feature, axis=1)
+            col_num     = dst_feature.shape[0]
+            
+            plt.figure(figsize=(10, 5), dpi=200)
+            for i in range(col_num):
+                plt.subplot(3, col_num, i+1)
+                plt.imshow(src_feature[i])
+                plt.axis("off")
+
+                plt.subplot(3, col_num, i+1+col_num)
+                plt.imshow(dst_feature[i])
+                plt.axis("off")
+
+            for i in range(len(srcBoxList)):
+                if srcBoxList[i] is not None:
+                    show_image     = np.zeros_like(src_feature[0], dtype=np.uint8)
+                    x1, x2, y1, y2 = srcBoxList[i]
+                    cv2.rectangle(show_image, (y1, x1), (y2, x2), (0, 255, 0), 1)
+                    x1, x2, y1, y2 = dstBoxList[i]
+                    cv2.rectangle(show_image, (y1, x1), (y2, x2), (0, 128, 0), 1)
+                    plt.subplot(3, col_num, i+1+col_num*2)
+                    plt.imshow(show_image)
+                    plt.axis("off")
+
+            plt.tight_layout()
+            save_path = "Layout_FA_WOMask_CutPaste_Epcho_" + str(epoch).zfill(8) + ".png"
+            save_path = os.path.join(self.save_path, save_path) if self.save_path else save_path
+            plt.savefig(save_path)
+            plt.close()
         return ans
 
-    def func_with_mask(self, y, mask):
+    def func_with_mask(self, y, mask, epoch=0):
         """
         If a segmentation mask is provided, ensure that the copied areas never cut semantic boundaries
         """
         ans_y    = y.clone()
         ans_mask = mask.clone()
-        ans_y, ans_mask = self.mix_background(ans_y, ans_mask)
-        ans_y, ans_mask = self.swap(ans_y, ans_mask)
-        ans_y, ans_mask = self.move_objects(ans_y, ans_mask)
+        ans_y, ans_mask = self.mix_background(ans_y, ans_mask, epoch)
+        ans_y, ans_mask = self.swap(ans_y, ans_mask, epoch)
+        ans_y, ans_mask = self.move_objects(ans_y, ans_mask, epoch)
         return ans_y
 
-    def mix_background(self, y, mask):
+    def mix_background(self, y, mask, epoch=0):
         """
         Copy-paste areas of background onto other background areas
         """
+        
+        ans_y      = y.clone()
+        ans_mask   = mask.clone()
+        rect1_list = []
+        rect2_list = []
         for i in range(0, y.shape[0]):
             if random.random() < self.prob:
                 
                 # 生成两个不重叠的矩形框，且不与语义分割图的语义边界重叠
-                rect1, rect2 = gen_nooverlap_rectangles(y, mask)
+                rect1, rect2 = gen_nooverlap_rectangles(ans_y, ans_mask)
                 if rect1[0] is not None:
                     x0_1, x0_2, y0_1, y0_2 = rect1
                     x1_1, x1_2, y1_1, y1_2 = rect2
-                    y[i,    :, x0_1:x0_2, y0_1:y0_2] = y[i,    :, x1_1:x1_2, y1_1:y1_2].clone()
-                    mask[i, :, x0_1:x0_2, y0_1:y0_2] = mask[i, :, x1_1:x1_2, y1_1:y1_2].clone()
+                    ans_y[i,    :, x0_1:x0_2, y0_1:y0_2] = ans_y[i,    :, x1_1:x1_2, y1_1:y1_2].clone()
+                    ans_mask[i, :, x0_1:x0_2, y0_1:y0_2] = ans_mask[i, :, x1_1:x1_2, y1_1:y1_2].clone()
+                    rect1_list.append([x0_1, x0_2, y0_1, y0_2])
+                    rect2_list.append([x1_1, x1_2, y1_1, y1_2])
+                else:
+                    rect1_list.append(None)
+                    rect2_list.append(None)
+            else:
+                rect1_list.append(None)
+                rect2_list.append(None)
 
-                    # debug ----------------- 
-                    if 0:
-                        src_feature  = y[i].detach().cpu().numpy().squeeze()
-                        src_feature  = np.mean(src_feature, axis=0)
-                        # 绘制 rect1 rect2
-                        cv2.rectangle(src_feature, (y0_1, x0_1), (y0_2, x0_2), (0, 255, 0), 1)
-                        cv2.rectangle(src_feature, (y1_1, x1_1), (y1_2, x1_2), (0, 128, 0), 1)
-                        mask_feature = mask[i].detach().cpu().numpy().squeeze()
-                        mask_feature = np.transpose(mask_feature, (1, 2, 0))
-                        plt.figure(figsize=(6, 2), dpi=200)
-                        plt.subplot(1, 2, 1)
-                        plt.imshow(src_feature)
-                        plt.axis("off")
-                        plt.subplot(1, 2, 2)
-                        plt.imshow(mask_feature)
-                        plt.axis("off")
-                        plt.show()
-                        plt.savefig("Layout_mix_background_{}.png".format(i))
-                        plt.close()
-                    # debug -----------------
+        # ---------------------------------- debug ----------------------------------
+        if epoch % 500 == 0:
+            src_feature  = y.detach().cpu().numpy().squeeze()
+            src_feature  = np.mean(src_feature, axis=1)
+            
+            dst_feature  = ans_y.detach().cpu().numpy().squeeze()
+            dst_feature  = np.mean(dst_feature, axis=1)
+            col_num      = dst_feature.shape[0]
+            
+            plt.figure(figsize=(8, 5), dpi=200)
+            for i in range(col_num):                
+                plt.subplot(3, len(rect1_list), i+1)
+                plt.imshow(src_feature[i])
+                plt.axis("off")
 
+                plt.subplot(3, col_num, i+1+col_num)
+                plt.imshow(dst_feature[i])
+                plt.axis("off")
 
-        return y, mask
+                if rect1_list[i] is not None:
+                    show_image             = np.zeros_like(src_feature[0], dtype=np.uint8)
+                    x0_1, x0_2, y0_1, y0_2 = rect1_list[i]
+                    x1_1, x1_2, y1_1, y1_2 = rect2_list[i]
+                    cv2.rectangle(show_image, (y0_1, x0_1), (y0_2, x0_2), (0, 255, 0), 1)
+                    cv2.rectangle(show_image, (y1_1, x1_1), (y1_2, x1_2), (0, 128, 0), 1)
+                    plt.subplot(3, col_num, i+1+col_num*2)
+                    plt.imshow(show_image)
+                    plt.axis("off")
+                    
+            plt.tight_layout()
+            #plt.show()
+            save_path = "Layout_FA_WMask_MixBackGround_Epcho_" + str(epoch).zfill(8) + ".png"
+            save_path = os.path.join(self.save_path, save_path) if self.save_path else save_path
+            plt.savefig(save_path)
+            plt.close()
 
-    def swap(self, y, mask_):
+        return ans_y, ans_mask
+
+    def swap(self, y, mask_, epoch=0):
         """
         Copy-paste background and objects into other areas, without cutting semantic boundaries
         """
         ans  = y.clone()
         mask = mask_.clone()
+        rect_list = []
+        old_area_list = []
         for i in range(0, y.shape[0] - 1, 2):
             if random.random() < self.prob:
+                find_flg = False
                 for jj in range(5):
                     x1, x2, y1, y2 = gen_rectangle(y)
                     rect           = x1, x2, y1, y2
                     if any_object_touched(rect, mask[i:i + 1]) or any_object_touched(rect, mask[i + 1:i + 2]):
                         continue
                     else:
+                        find_flg = True
                         ans[i,     :, x1:x2, y1:y2]  = y[i + 1, :, x1:x2, y1:y2].clone()
                         ans[i + 1, :, x1:x2, y1:y2]  = y[i,     :, x1:x2, y1:y2].clone()
                         mem                          = mask_[i,     :, x1:x2, y1:y2].clone()
                         mask[i,     :, x1:x2, y1:y2] = mask_[i + 1, :, x1:x2, y1:y2].clone()
                         mask[i + 1, :, x1:x2, y1:y2] = mem
-
-                        # debug ----------------- 
-                        if 0:
-                            src_feature  = y[i].detach().cpu().numpy().squeeze()
-                            src_feature  = np.mean(src_feature, axis=0)
-                            cv2.rectangle(src_feature, (y1, x1), (y2, x2), (0, 255, 0), 1)
-                            dst_feature  = y[i+1].detach().cpu().numpy().squeeze()
-                            dst_feature  = np.mean(dst_feature, axis=0)
-                            cv2.rectangle(dst_feature, (y1, x1), (y2, x2), (0, 128, 0), 1)
-
-                            mask_feature1 = mask[i].detach().cpu().numpy().squeeze()
-                            mask_feature1 = np.transpose(mask_feature1, (1, 2, 0))
-
-                            mask_feature2 = mask[i+1].detach().cpu().numpy().squeeze()
-                            mask_feature2 = np.transpose(mask_feature2, (1, 2, 0))
-                            
-                            plt.figure(figsize=(10, 2), dpi=200)
-                            plt.subplot(1, 4, 1)
-                            plt.imshow(src_feature)
-                            plt.axis("off")
-                            plt.subplot(1, 4, 2)
-                            plt.imshow(dst_feature)
-                            plt.axis("off")
-                            plt.subplot(1, 4, 3)
-                            plt.imshow(mask_feature1)
-                            plt.axis("off")
-                            plt.subplot(1, 4, 4)
-                            plt.imshow(mask_feature2)
-                            plt.axis("off")
-                            plt.show()
-                            plt.savefig("Layout_swap_{}.png".format(i))
-                            plt.close()
-                        # debug -----------------
                         break
+                if find_flg:
+                    rect_list.append([x1, x2, y1, y2])
+                else:
+                    rect_list.append(None)
+            else:
+                rect_list.append(None)
+
             if random.random() < self.prob:
                 which_object = torch.randint(mask.shape[1] - 1, size=()) + 1
                 old_area     = torch.argmax(mask[i], dim=0, keepdim=False) == which_object
                 if not area_cut_any_object(old_area, mask[i + 1]):
                     ans[i+1]  = ans[i].clone() * (old_area * 1.0) + ans[i+1].clone() * (1 - old_area * 1.0)
                     mask[i+1] = mask[i]        * (old_area * 1.0) + mask[i+1]        * (1 - old_area * 1.0)
+                    old_area_list.append(old_area)
+                else:
+                    old_area_list.append(None)
+            else:
+                old_area_list.append(None)
+
+        # ---------------------------------- debug ----------------------------------
+        if epoch % 500 == 0:
+            src_feature  = y.detach().cpu().numpy().squeeze()
+            src_feature  = np.mean(src_feature, axis=1)
+            
+            dst_feature  = ans.detach().cpu().numpy().squeeze()
+            dst_feature  = np.mean(dst_feature, axis=1)
+
+            src_mask     = mask_.detach().cpu().numpy().squeeze()
+            dst_mask     = mask.detach().cpu().numpy().squeeze()
+
+            plt.figure(figsize=(10, 8), dpi=200)
+            for i in range(dst_feature.shape[0]):
+                cur_feature = src_feature[i]
+                plt.subplot(4, dst_feature.shape[0], i+1)
+                plt.imshow(cur_feature)
+                plt.axis("off")
+
+                cur_feature = dst_feature[i]
+                plt.subplot(4, dst_feature.shape[0], i+1+dst_feature.shape[0])
+                plt.imshow(cur_feature)
+                plt.axis("off")
+
+                cur_mask = src_mask[i]
+                if len(cur_mask.shape) == 3 and cur_mask.shape[0] == 2:
+                    cur_mask = np.transpose(cur_mask, (1, 2, 0))
+                    cur_mask = np.concatenate((cur_mask, np.zeros_like(cur_mask[:, :, 0:1])), axis=2)
+                plt.subplot(4, dst_feature.shape[0], i+1+dst_feature.shape[0]*2)
+                plt.imshow(cur_mask)
+                plt.axis("off")
+
+                cur_mask = dst_mask[i]
+                if len(cur_mask.shape) == 3 and cur_mask.shape[0] == 2:
+                    cur_mask = np.transpose(cur_mask, (1, 2, 0))
+                    cur_mask = np.concatenate((cur_mask, np.zeros_like(cur_mask[:, :, 0:1])), axis=2)
+                plt.subplot(4, dst_feature.shape[0], i+1+dst_feature.shape[0]*3)
+                plt.imshow(cur_mask)
+                plt.axis("off")
+
+            '''
+            for i in range(len(rect_list)):
+                if rect_list[i] is not None:
+                    x1, x2, y1, y2 = rect_list[i]
+                    cv2.rectangle(src_feature[i*2],     (y1, x1), (y2, x2), (0, 255, 0), 1)
+                    cv2.rectangle(src_feature[i*2 + 1], (y1, x1), (y2, x2), (0, 128, 0), 1)
+                
+                if old_area_list[i] is not None:
+                    old_area = old_area_list[i]
+                    if old_area is None:
+                        continue
+                    x1, x2, y1, y2 = torch.nonzero(old_area * 1.0)[:, 0].min(), torch.nonzero(old_area * 1.0)[:, 0].max(), torch.nonzero(old_area * 1.0)[:, 1].min(), torch.nonzero(old_area * 1.0)[:, 1].max()
+                    cv2.rectangle(dst_feature[i*2],     (y1.item(), x1.item()), (y2.item(), x2.item()), (255, 0, 0), 1)
+                    cv2.rectangle(dst_feature[i*2 + 1], (y1.item(), x1.item()), (y2.item(), x2.item()), (128, 0, 0), 1)
+            '''
+
+            plt.tight_layout()
+            save_path = "Layout_FA_WMask_Swap_Epcho_" + str(epoch).zfill(8) + ".png"
+            save_path = os.path.join(self.save_path, save_path) if self.save_path else save_path
+            plt.savefig(save_path)
+            plt.close()
+
+
         return ans, mask
 
-    def move_objects(self, y, mask):
+    def move_objects(self, y, mask, epoch=0):
         """
         Move, dupplicate, or remove semantic objects
         """
+        
+        ans_y    = y.clone()
+        ans_mask = mask.clone()
+        old_area_list = []
+        new_area_list = []
+
         for i in range(0, y.shape[0]):
             num_changed_objects = torch.randint(mask.shape[1] - 1, size=()) + 1
             seq_classes         = torch.randperm(mask.shape[1] - 1)[:num_changed_objects]
+            sub_old_list        = []
+            sub_new_list        = []
             for cur_class in seq_classes:
                 old_area = torch.argmax(mask[i], dim=0, keepdim=False) == cur_class + 1  # +1 to avoid background
                 new_area = generate_new_area(old_area, mask[i])
@@ -265,9 +438,83 @@ class Layout_FA(nn.Module):
                     continue
                 if random.random() < self.prob:
                     y[i], mask[i] = dupplicate_object(y[i], mask[i], old_area, new_area)
+                    sub_old_list.append(old_area)
+                    sub_new_list.append(new_area)
                 if random.random() < self.prob:
                     y[i], mask[i] = remove_object(y[i], mask[i], old_area, new_area)
-            return y, mask
+                    sub_old_list.append(old_area)
+                    sub_new_list.append(new_area)
+            
+            if len(sub_old_list) == 0:
+                sub_old_list.append(None)
+                sub_new_list.append(None)
+            
+            old_area_list.append(sub_old_list)
+            new_area_list.append(sub_new_list)
+
+        if epoch % 500 == 0:
+            src_feature  = ans_y.detach().cpu().numpy().squeeze()
+            src_feature  = np.mean(src_feature, axis=1)
+
+            dst_feature  = y.detach().cpu().numpy().squeeze()
+            dst_feature  = np.mean(dst_feature, axis=1)
+
+            src_mask     = ans_mask.detach().cpu().numpy().squeeze()
+            dst_mask     = mask.detach().cpu().numpy().squeeze()
+
+            plt.figure(figsize=(10, 10), dpi=200)
+            for i in range(src_feature.shape[0]):
+                cur_feature = src_feature[i]
+                plt.subplot(5, src_feature.shape[0], i+1)
+                plt.imshow(cur_feature)
+                plt.axis("off")
+
+                cur_feature = dst_feature[i]
+                plt.subplot(5, src_feature.shape[0], i+1+src_feature.shape[0])
+                plt.imshow(cur_feature)
+                plt.axis("off")
+
+                cur_mask = src_mask[i]
+                if len(cur_mask.shape) == 3 and cur_mask.shape[0] == 2:
+                    cur_mask = np.transpose(cur_mask, (1, 2, 0))
+                    cur_mask = np.concatenate((cur_mask, np.zeros_like(cur_mask[:, :, 0:1])), axis=2)
+                plt.subplot(5, src_feature.shape[0], i+1+src_feature.shape[0]*2)
+                plt.imshow(cur_mask)
+                plt.axis("off")
+
+                cur_mask = dst_mask[i]
+                if len(cur_mask.shape) == 3 and cur_mask.shape[0] == 2:
+                    cur_mask = np.transpose(cur_mask, (1, 2, 0))
+                    cur_mask = np.concatenate((cur_mask, np.zeros_like(cur_mask[:, :, 0:1])), axis=2)
+                plt.subplot(5, src_feature.shape[0], i+1+src_feature.shape[0]*3)
+                plt.imshow(cur_mask)
+                plt.axis("off")
+
+                show_image = np.zeros_like(cur_feature, dtype=np.uint8)
+                for j in range(len(new_area_list[i])):
+                    cur_new_area = new_area_list[i][j]
+                    cur_old_area = old_area_list[i][j]
+
+                    if cur_new_area is not None:
+                        x_diff, y_diff, idx_x1, idx_x2, idx_y1, idx_y2 = cur_new_area
+                        cv2.rectangle(show_image, (idx_y1.item(), idx_x1.item()), (idx_y2.item(), idx_x2.item()), (0, 255, 0), 1)
+                    
+                    if cur_old_area is not None:
+                        x1, x2, y1, y2 = torch.nonzero(cur_old_area * 1.0)[:, 0].min(), torch.nonzero(cur_old_area * 1.0)[:, 0].max(), torch.nonzero(cur_old_area * 1.0)[:, 1].min(), torch.nonzero(cur_old_area * 1.0)[:, 1].max()
+                        cv2.rectangle(show_image, (y1.item(), x1.item()), (y2.item(), x2.item()), (255, 0, 0), 1)
+
+                plt.subplot(5, src_feature.shape[0], i+1+src_feature.shape[0]*4)
+                plt.imshow(show_image)
+                plt.axis("off")
+
+            plt.tight_layout()
+            #plt.show()
+            save_path = "Layout_FA_WMask_MoveObject_Epcho_" + str(epoch).zfill(8) + ".png"
+            save_path = os.path.join(self.save_path, save_path) if self.save_path else save_path
+            plt.savefig(save_path)
+            plt.close()
+
+        return y, mask
 
 
 # 生成矩形框

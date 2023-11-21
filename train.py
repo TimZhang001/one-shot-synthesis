@@ -33,7 +33,7 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
     # --- generator update --- #
     netG.zero_grad()
     z     = utils.sample_noise(opt.noise_dim, opt.batch_size).to(opt.device)
-    out_G = netG.generate(z, get_feat=opt.use_DR, init_x=init_x_repeat)
+    out_G = netG.generate(z, get_feat=opt.use_DR, init_x=init_x_repeat, epoch=epoch)
     if use_aug1:
         out_G = diff_augment(out_G)
     logits["G"] = netD.discriminate(out_G, for_real=False, epoch=epoch)
@@ -55,7 +55,7 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
 
     z = utils.sample_noise(opt.noise_dim, opt.batch_size).to(opt.device)
     with torch.no_grad():
-        out_G = netG.generate(z, get_feat=False, init_x=init_x_repeat)  # fake
+        out_G = netG.generate(z, get_feat=False, init_x=init_x_repeat, epoch=epoch)  # fake
     if use_aug1:
         out_G = diff_augment(out_G)
     logits["Dfake"] = netD.discriminate(out_G, for_real=False, epoch=epoch)
@@ -74,14 +74,20 @@ for epoch, batch in enumerate(dataloader, start=opt.continue_epoch):
     
     if opt.use_EMA:
         netEMA = utils.update_EMA(netEMA, netG, opt.EMA_decay)
+    
     if epoch % opt.freq_save_ckpt == 0 or epoch == opt.num_epochs:
         visualizer.save_networks(netG, netD, netEMA, epoch)
+    
     if epoch % opt.freq_print == 0 or epoch == opt.num_epochs:
         timer.get_loss_item(loss_item_G, loss_item_Dreal, loss_item_Dfake)
         timer(epoch)
         z    = utils.sample_noise(opt.noise_dim, 8).to(opt.device)
-        fake = netEMA.generate(z) if opt.use_EMA else netG.generate(z)
+        if opt.use_EMA:
+            fake = netEMA.generate(z, False, init_x=init_x_repeat, epoch=epoch) 
+        else:
+            fake = netG.generate(z, False, init_x=init_x_repeat, epoch=epoch)
         visualizer.save_batch(fake, batch, epoch)
+    
     if (epoch % opt.freq_save_loss == 0 or epoch == opt.num_epochs) and epoch > 0 :
         visualizer.save_losses_logits(epoch)
 

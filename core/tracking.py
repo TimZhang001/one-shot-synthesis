@@ -79,7 +79,7 @@ class losses_saver():
         if self.counter % self.freq_smooth == self.freq_smooth - 1:
             for loss in self.cur_estimates:
                 self.losses[loss] = self.losses.get(loss, [])   + [str("{:8.5f}".format(self.cur_estimates[loss] / self.cur_count[loss]))]
-            self.losses["Epcho"] = self.losses.get("Epcho", []) + [str("{:8.1f}".format(epoch))] 
+            self.losses["Epoch"] = self.losses.get("Epoch", []) + [str("{:8.1f}".format(epoch))] 
             self.cur_estimates, self.cur_count = dict(), dict()
 
         # --- logits --- #
@@ -91,7 +91,7 @@ class losses_saver():
                 self.logits[item+".1"] = self.logits.get(item+".1", []) + [str("{:8.5f}".format(quant(self.cur_log[item], 0.1)))]
                 self.logits[item+".5"] = self.logits.get(item+".5", []) + [str("{:8.5f}".format(quant(self.cur_log[item], 0.5)))]
                 self.logits[item+".9"] = self.logits.get(item+".9", []) + [str("{:8.5f}".format(quant(self.cur_log[item], 0.9)))]
-            self.logits["Epcho"] = self.logits.get("Epcho", []) + [str("{:8.1f}".format(epoch))] 
+            self.logits["Epoch"] = self.logits.get("Epoch", []) + [str("{:8.1f}".format(epoch))] 
             self.cur_estimates_log = dict()
         self.counter += 1
 
